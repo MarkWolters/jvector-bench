@@ -1,0 +1,10 @@
+# Vector index configuration for OpenAI text-embedding-3-large
+# Dimension: 3072, optimized for dot product similarity
+
+vector_index:
+  dimension: 3072
+  similarity_function: "DOT_PRODUCT"
+  maximum_node_connections: 16
+  construction_beam_width: 100
+  source_model: "OPENAI_V3_LARGE"
+  enable_hierarchy: false

@@ -1,0 +1,10 @@
+# Vector index configuration for Cohere v3 embeddings
+# Dimension: 1024, optimized for dot product similarity
+
+vector_index:
+  dimension: 1024
+  similarity_function: "DOT_PRODUCT"
+  maximum_node_connections: 16
+  construction_beam_width: 100
+  source_model: "COHERE_V3"
+  enable_hierarchy: false

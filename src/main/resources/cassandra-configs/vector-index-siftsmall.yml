@@ -1,0 +1,7 @@
+vector_index:
+  dimension: 128
+  similarity_function: "EUCLIDEAN"
+  maximum_node_connections: 16
+  construction_beam_width: 100
+  source_model: "OTHER"
+  enable_hierarchy: false

@@ -1,0 +1,52 @@
+# Example Cassandra connection configuration for multi-node cluster
+# Use this for production or multi-node testing
+
+cassandra:
+  # Contact points - Multiple nodes for redundancy
+  contact_points:
+    - "192.168.1.10:9042"
+    - "192.168.1.11:9042"
+    - "192.168.1.12:9042"
+
+  # Local datacenter name
+  local_datacenter: "datacenter1"
+
+  # Keyspace for benchmark data
+  keyspace: "jvector_bench"
+
+  # Replication factor (3 for production)
+  replication_factor: 3
+
+  # Replication strategy
+  replication_strategy: "SimpleStrategy"
+
+  # For multi-DC clusters, use NetworkTopologyStrategy:
+  # replication_strategy: "NetworkTopologyStrategy"
+  # replication_config:
+  #   datacenter1: 3
+  #   datacenter2: 3
+
+  # Authentication (typically required in production)
+  username: "benchmark_user"
+  password: "secure_password"
+
+  # SSL/TLS (recommended for production)
+  ssl:
+    enabled: true
+    truststore_path: "/etc/cassandra/ssl/truststore.jks"
+    truststore_password: "truststore_password"
+
+  # Connection pool settings for higher throughput
+  connection:
+    max_requests_per_connection: 2048
+    pool_local_size: 8
+    pool_remote_size: 4
+    connect_timeout_ms: 10000
+    read_timeout_ms: 30000
+
+  # Consistency levels
+  write_consistency: "LOCAL_QUORUM"
+  read_consistency: "LOCAL_QUORUM"
+
+  # Retry policy
+  retry_policy: "DEFAULT"

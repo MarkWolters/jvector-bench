@@ -1,0 +1,27 @@
+# Vector index configuration for OpenAI ada-002 embeddings
+# Dimension: 1536, optimized for dot product similarity
+
+vector_index:
+  # Vector dimension
+  dimension: 1536
+
+  # Similarity function
+  # Options: DOT_PRODUCT, COSINE, EUCLIDEAN
+  similarity_function: "DOT_PRODUCT"
+
+  # Maximum node connections (M parameter in HNSW)
+  # Higher values = better recall, more memory
+  # Recommended range: 8-32
+  maximum_node_connections: 16
+
+  # Construction beam width (efConstruction in HNSW)
+  # Higher values = better index quality, slower build
+  # Recommended range: 50-200
+  construction_beam_width: 100
+
+  # Source model hint for automatic compression
+  # Options: ADA002, OPENAI_V3_SMALL, OPENAI_V3_LARGE, BERT, GECKO, COHERE_V3, NV_QA_4, OTHER
+  source_model: "ADA002"
+
+  # Enable hierarchical indexing (requires jvector v4+)
+  enable_hierarchy: false

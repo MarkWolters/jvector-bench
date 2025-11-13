@@ -1,0 +1,39 @@
+# Example Cassandra connection configuration for local single-node cluster
+# Use this for testing with Docker or CCM
+
+cassandra:
+  # Contact points - Cassandra nodes to connect to
+  contact_points:
+    - "localhost:9042"
+
+  # Local datacenter name (must match your cluster config)
+  local_datacenter: "datacenter1"
+
+  # Keyspace for benchmark data
+  keyspace: "jvector_bench"
+
+  # Replication factor (1 is fine for single-node testing)
+  replication_factor: 1
+
+  # Replication strategy
+  replication_strategy: "SimpleStrategy"
+
+  # Optional: Authentication (uncomment if needed)
+  # username: "cassandra"
+  # password: "cassandra"
+
+  # Optional: SSL/TLS (uncomment if needed)
+  # ssl:
+  #   enabled: true
+  #   truststore_path: "/path/to/truststore.jks"
+  #   truststore_password: "password"
+
+  # Optional: Connection pool settings
+  connection:
+    max_requests_per_connection: 1024
+    pool_local_size: 4
+    pool_remote_size: 2
+
+  # Consistency levels for reads and writes
+  write_consistency: "ONE"
+  read_consistency: "ONE"
