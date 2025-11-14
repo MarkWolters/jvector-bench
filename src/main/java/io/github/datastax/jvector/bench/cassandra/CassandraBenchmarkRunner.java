@@ -20,6 +20,7 @@ import com.datastax.oss.driver.api.core.cql.BatchStatement;
 import com.datastax.oss.driver.api.core.cql.BatchStatementBuilder;
 import com.datastax.oss.driver.api.core.cql.BatchType;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 import com.datastax.oss.driver.api.core.data.CqlVector;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.datastax.jvector.bench.BenchResult;
@@ -37,9 +38,11 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Main entry point for Cassandra benchmarks.
@@ -196,9 +199,15 @@ public class CassandraBenchmarkRunner {
         int concurrency = loadConfig.getConcurrency();
         Semaphore semaphore = new Semaphore(concurrency);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger errorCount = new AtomicInteger(0);
 
         long startTime = System.nanoTime();
         int totalVectors = ds.baseVectors.size();
+        int totalBatches = (totalVectors + batchSize - 1) / batchSize;
+
+        logger.info("Loading {} vectors in {} batches (batch size: {}, concurrency: {})",
+            totalVectors, totalBatches, batchSize, concurrency);
 
         for (int i = 0; i < totalVectors; i += batchSize) {
             BatchStatementBuilder batch = BatchStatement.builder(
@@ -214,28 +223,75 @@ public class CassandraBenchmarkRunner {
             }
 
             // Execute batch asynchronously with rate limiting
-            int batchNum = i;
+            final int batchStartIdx = i;
+            final int batchEndIdx = batchEnd;
             semaphore.acquire();
             CompletableFuture<Void> future = connection.getSession()
                 .executeAsync(batch.build())
                 .toCompletableFuture()
-                .thenAccept(rs -> {
-                    if (batchNum > 0 && batchNum % 10000 == 0) {
-                        logger.info("Loaded {} / {} vectors ({} %)",
-                            batchNum, totalVectors, (batchNum * 100) / totalVectors);
+                .handle((rs, throwable) -> {
+                    try {
+                        if (throwable != null) {
+                            logger.error("Failed to load batch [{}-{}): {}",
+                                batchStartIdx, batchEndIdx, throwable.getMessage());
+                            errorCount.incrementAndGet();
+                        } else {
+                            int completed = successCount.incrementAndGet();
+                            if (completed % 10 == 0 || completed == totalBatches) {
+                                int vectorsLoaded = Math.min(completed * batchSize, totalVectors);
+                                logger.info("Progress: {} / {} batches ({} / {} vectors, {:.1f}%)",
+                                    completed, totalBatches, vectorsLoaded, totalVectors,
+                                    (vectorsLoaded * 100.0) / totalVectors);
+                            }
+                        }
+                    } finally {
+                        semaphore.release();
                     }
-                    semaphore.release();
+                    return null;
                 });
 
             futures.add(future);
         }
 
         // Wait for all batches
+        logger.info("Waiting for all batches to complete...");
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         double elapsed = (System.nanoTime() - startTime) / 1e9;
-        logger.info("Data loaded in {:.2f} seconds ({:.0f} vectors/sec)",
+        logger.info("Data loading finished in {:.2f} seconds ({:.0f} vectors/sec)",
             elapsed, totalVectors / elapsed);
+        logger.info("Success: {} batches, Errors: {} batches", successCount.get(), errorCount.get());
+
+        // Wait for Cassandra to flush writes before validating
+        logger.info("Waiting for Cassandra to flush writes...");
+        try {
+            Thread.sleep(5000);  // 5 second delay for Cassandra to flush and make data visible
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for flush", e);
+        }
+
+        // Validate actual row count in Cassandra
+        logger.info("Validating loaded data (COUNT query may take some time)...");
+        String countQuery = String.format("SELECT COUNT(*) FROM %s.vectors", connection.getConfig().getKeyspace());
+        SimpleStatement statement = SimpleStatement.builder(countQuery)
+            .setTimeout(Duration.ofSeconds(120))  // COUNT(*) can be slow on large tables
+            .build();
+        long actualCount = connection.getSession().execute(statement).one().getLong(0);
+        logger.info("Actual rows in Cassandra: {} (expected: {})", actualCount, totalVectors);
+
+        if (actualCount != totalVectors) {
+            throw new RuntimeException(String.format(
+                "Data validation failed: expected %d vectors but found %d in Cassandra",
+                totalVectors, actualCount));
+        }
+
+        if (errorCount.get() > 0) {
+            logger.warn("Data loaded successfully despite {} batch errors (likely transient/retried)",
+                errorCount.get());
+        }
+
+        logger.info("Data loading validation successful!");
     }
 
     /**
