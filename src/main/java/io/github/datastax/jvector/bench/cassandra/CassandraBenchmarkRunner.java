@@ -188,7 +188,8 @@ public class CassandraBenchmarkRunner {
         logger.info("Loading {} vectors into Cassandra...", ds.baseVectors.size());
 
         PreparedStatement insert = connection.getSession().prepare(
-            "INSERT INTO vectors (id, vector) VALUES (?, ?)"
+            String.format("INSERT INTO %s.vectors (id, vector) VALUES (?, ?)",
+                connection.getConfig().getKeyspace())
         );
 
         int batchSize = loadConfig.getBatchSize();
@@ -209,7 +210,7 @@ public class CassandraBenchmarkRunner {
             for (int j = i; j < batchEnd; j++) {
                 VectorFloat<?> vector = ds.baseVectors.get(j);
                 List<Float> vectorList = vectorToList(vector);
-                batch.addStatement(insert.bind(j, CqlVector.newInstance(vectorList)));
+                batch.addStatement(insert.bind(String.valueOf(j), CqlVector.newInstance(vectorList)));
             }
 
             // Execute batch asynchronously with rate limiting

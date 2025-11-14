@@ -19,6 +19,7 @@ package io.github.datastax.jvector.bench.cassandra;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.CqlSessionBuilder;
 import com.datastax.oss.driver.api.core.cql.*;
+import com.datastax.oss.driver.api.core.data.CqlVector;
 import com.datastax.oss.driver.api.core.metadata.Metadata;
 import io.github.datastax.jvector.bench.cassandra.config.CassandraConfig;
 import io.github.datastax.jvector.bench.cassandra.config.SearchConfig;
@@ -121,7 +122,7 @@ public class CassandraConnection implements AutoCloseable {
 
         // Create table
         String createTable = String.format(
-            "CREATE TABLE IF NOT EXISTS vectors (id int PRIMARY KEY, vector vector<float, %d>)",
+            "CREATE TABLE IF NOT EXISTS vectors (id text PRIMARY KEY, vector vector<float, %d>)",
             indexConfig.getDimension()
         );
         logger.debug("Creating table: {}", createTable);
@@ -188,10 +189,11 @@ public class CassandraConnection implements AutoCloseable {
     public void prepareSearch(SearchConfig searchConfig) {
         String cql = String.format(
             "SELECT id, vector, similarity_%s(vector, ?) as score " +
-            "FROM vectors " +
+            "FROM %s.vectors " +
             "ORDER BY vector ANN OF ? " +
             "LIMIT ?",
-            searchConfig.getSimilarityFunction().toLowerCase()
+            searchConfig.getSimilarityFunction().toLowerCase(),
+            config.getKeyspace()
         );
 
         this.searchStatement = session.prepare(cql);
@@ -207,8 +209,9 @@ public class CassandraConnection implements AutoCloseable {
         }
 
         List<Float> queryList = vectorToList(query);
+        CqlVector<Float> queryVector = CqlVector.newInstance(queryList);
 
-        BoundStatement bound = searchStatement.bind(queryList, queryList, topK)
+        BoundStatement bound = searchStatement.bind(queryVector, queryVector, topK)
             .setConsistencyLevel(searchConfig.getReadConsistency())
             .setTimeout(Duration.ofMillis(searchConfig.getQueryTimeoutMs()));
 
@@ -254,7 +257,7 @@ public class CassandraConnection implements AutoCloseable {
         float worstScore = Float.POSITIVE_INFINITY;
 
         for (Row row : rs) {
-            int id = row.getInt("id");
+            int id = Integer.parseInt(row.getString("id"));
             float score = row.getFloat("score");
             nodes.add(new SearchResult.NodeScore(id, score));
 
