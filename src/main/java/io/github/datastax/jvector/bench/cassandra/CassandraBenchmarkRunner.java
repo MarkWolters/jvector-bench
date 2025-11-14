@@ -20,6 +20,7 @@ import com.datastax.oss.driver.api.core.cql.BatchStatement;
 import com.datastax.oss.driver.api.core.cql.BatchStatementBuilder;
 import com.datastax.oss.driver.api.core.cql.BatchType;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.data.CqlVector;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.datastax.jvector.bench.BenchResult;
 import io.github.datastax.jvector.bench.benchmarks.Metric;
@@ -208,7 +209,7 @@ public class CassandraBenchmarkRunner {
             for (int j = i; j < batchEnd; j++) {
                 VectorFloat<?> vector = ds.baseVectors.get(j);
                 List<Float> vectorList = vectorToList(vector);
-                batch.addStatement(insert.bind(j, vectorList));
+                batch.addStatement(insert.bind(j, CqlVector.newInstance(vectorList)));
             }
 
             // Execute batch asynchronously with rate limiting
