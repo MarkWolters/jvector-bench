@@ -40,7 +40,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>io.github.datastax.jvector.bench.JvectorBench</mainClass>
+                            <mainClass>io.github.datastax.jvector.bench.BenchmarkLauncher</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
