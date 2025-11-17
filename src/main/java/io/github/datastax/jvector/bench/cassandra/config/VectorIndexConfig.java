@@ -22,6 +22,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -47,6 +48,8 @@ public class VectorIndexConfig {
     @JsonProperty("enable_hierarchy")
     private boolean enableHierarchy = false;
 
+    private static Map<String,Object> params = new HashMap<>();
+
     /**
      * Load configuration from YAML file
      */
@@ -54,11 +57,11 @@ public class VectorIndexConfig {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
         File file = new File(path);
 
-        Map<String, Object> yaml = mapper.readValue(file, Map.class);
-        if (yaml.containsKey("vector_index")) {
-            return mapper.convertValue(yaml.get("vector_index"), VectorIndexConfig.class);
+        params = mapper.readValue(file, Map.class);
+        if (params.containsKey("vector_index")) {
+            return mapper.convertValue(params.get("vector_index"), VectorIndexConfig.class);
         } else {
-            return mapper.convertValue(yaml, VectorIndexConfig.class);
+            return mapper.convertValue(params, VectorIndexConfig.class);
         }
     }
 
@@ -166,5 +169,9 @@ public class VectorIndexConfig {
     public String toString() {
         return String.format("VectorIndexConfig{dimension=%d, similarity=%s, M=%d, efConstruction=%d, model=%s}",
             dimension, similarityFunction, maximumNodeConnections, constructionBeamWidth, sourceModel);
+    }
+
+    public static Map<String, Object> getParams() {
+        return params;
     }
 }

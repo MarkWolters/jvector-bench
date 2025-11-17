@@ -138,6 +138,8 @@ public class CassandraConnection implements AutoCloseable {
         logger.debug("Creating index: {}", createIndex);
         session.execute(createIndex);
 
+        session.execute("CREATE TABLE IF NOT EXISTS index_load_times (dataset text PRIMARY KEY, build_time double)");
+
         logger.info("Schema ready with config: {}", indexConfig);
     }
 
@@ -158,7 +160,7 @@ public class CassandraConnection implements AutoCloseable {
         int maxAttempts = 300; // 5 minutes with 1 second sleep
 
         while (attempts < maxAttempts) {
-            ResultSet rs = session.execute(ps.bind(config.getKeyspace(), datasetName));
+            ResultSet rs = session.execute(ps.bind(config.getKeyspace(), config.getTable()));
             Row row = rs.one();
 
             if (row != null) {
@@ -290,6 +292,29 @@ public class CassandraConnection implements AutoCloseable {
         if (session != null && !session.isClosed()) {
             logger.info("Closing Cassandra session");
             session.close();
+        }
+    }
+
+    public void writeIndexBuildTime(String dataset, double endTime) {
+        try {
+            String cql = String.format("INSERT INTO %s.index_load_times (dataset, build_time) VALUES ('%s', %.4f)",
+                    config.getKeyspace(), dataset, endTime);
+            session.execute(cql);
+        }  catch (Exception e) {
+            logger.error("Error while writing index build time", e);
+        }
+    }
+
+    public Double getIndexBuildTime(String name) {
+        try {
+            String cql = String.format("SELECT build_time FROM %s.index_load_times WHERE dataset='%s'",
+                    config.getKeyspace(),
+                    name);
+            Row row = session.execute(cql).one();
+            return (row == null) ? null : row.getDouble("build_time");
+        } catch (Exception e) {
+            logger.error("Error while getting index build time", e);
+            return 0.0;
         }
     }
 }

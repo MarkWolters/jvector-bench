@@ -171,13 +171,6 @@ public class CassandraBenchmarkRunner {
             // Load data
             loadDataIntoIndex(connection, ds, loadConfig);
 
-            // Wait for index build
-            if (!loadConfig.isSkipIndexWait()) {
-                connection.waitForIndexBuild();
-            } else {
-                logger.info("Skipping index build wait");
-            }
-
             logger.info("Dataset loading complete!");
         }
     }
@@ -263,6 +256,11 @@ public class CassandraBenchmarkRunner {
             elapsed, totalVectors / elapsed);
         logger.info("Success: {} batches, Errors: {} batches", successCount.get(), errorCount.get());
 
+        // verify the index is built
+        connection.waitForIndexBuild();
+        double endTime = (System.nanoTime() - startTime) / 1e9;
+        connection.writeIndexBuildTime(ds.name, endTime);
+
         // Wait for Cassandra to flush writes before validating
         logger.info("Waiting for Cassandra to flush writes...");
         try {
@@ -304,12 +302,15 @@ public class CassandraBenchmarkRunner {
         String connectionPath = params.get("connection");
         String datasetName = params.get("dataset");
         String outputPath = params.get("output");
+        String indexConfigPath = params.get("index-config");
 
-        if (connectionPath == null || datasetName == null || outputPath == null) {
+        if (connectionPath == null || datasetName == null || outputPath == null || indexConfigPath == null) {
             logger.error("Missing required arguments for benchmark command");
             printUsage();
             System.exit(1);
         }
+
+        VectorIndexConfig indexConfig = VectorIndexConfig.fromYaml(indexConfigPath);
 
         int topK = Integer.parseInt(params.getOrDefault("topK", "10"));
         int queryRuns = Integer.parseInt(params.getOrDefault("query-runs", "2"));
@@ -368,6 +369,8 @@ public class CassandraBenchmarkRunner {
 
                 logger.info("{} complete", benchmark.getBenchmarkName());
             }
+            results.add(new BenchResult(ds.name, VectorIndexConfig.getParams(),
+                    Map.of("Index Build Time", connection.getIndexBuildTime(ds.name))));
 
             // Write results
             writeResults(results, outputPath, ds.name);
