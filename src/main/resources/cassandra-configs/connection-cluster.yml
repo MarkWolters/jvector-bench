@@ -14,6 +14,9 @@ cassandra:
   # Keyspace for benchmark data
   keyspace: "jvector_bench"
 
+  # table to store benchmark data
+  table: "vectors"
+
   # Replication factor (3 for production)
   replication_factor: 3
 

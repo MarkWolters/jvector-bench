@@ -12,6 +12,9 @@ cassandra:
   # Keyspace for benchmark data
   keyspace: "jvector_bench"
 
+  # table to store benchmark data
+  table: "vectors"
+
   # Replication factor (1 is fine for single-node testing)
   replication_factor: 1
 

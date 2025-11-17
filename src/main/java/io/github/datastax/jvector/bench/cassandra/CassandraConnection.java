@@ -122,7 +122,8 @@ public class CassandraConnection implements AutoCloseable {
 
         // Create table
         String createTable = String.format(
-            "CREATE TABLE IF NOT EXISTS vectors (id text PRIMARY KEY, vector vector<float, %d>)",
+            "CREATE TABLE IF NOT EXISTS %s (id text PRIMARY KEY, vector vector<float, %d>)",
+            config.getTable(),
             indexConfig.getDimension()
         );
         logger.debug("Creating table: {}", createTable);
@@ -157,7 +158,7 @@ public class CassandraConnection implements AutoCloseable {
         int maxAttempts = 300; // 5 minutes with 1 second sleep
 
         while (attempts < maxAttempts) {
-            ResultSet rs = session.execute(ps.bind(config.getKeyspace(), "vectors"));
+            ResultSet rs = session.execute(ps.bind(config.getKeyspace(), datasetName));
             Row row = rs.one();
 
             if (row != null) {

@@ -191,8 +191,9 @@ public class CassandraBenchmarkRunner {
         logger.info("Loading {} vectors into Cassandra...", ds.baseVectors.size());
 
         PreparedStatement insert = connection.getSession().prepare(
-            String.format("INSERT INTO %s.vectors (id, vector) VALUES (?, ?)",
-                connection.getConfig().getKeyspace())
+            String.format("INSERT INTO %s.%s (id, vector) VALUES (?, ?)",
+                connection.getConfig().getKeyspace(),
+                connection.getConfig().getTable())
         );
 
         int batchSize = loadConfig.getBatchSize();

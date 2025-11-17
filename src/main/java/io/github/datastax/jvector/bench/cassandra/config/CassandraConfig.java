@@ -40,6 +40,9 @@ public class CassandraConfig {
     @JsonProperty("keyspace")
     private String keyspace = "jvector_bench";
 
+    @JsonProperty("table")
+    private String table = "vectors";
+
     @JsonProperty("replication_factor")
     private int replicationFactor = 1;
 
@@ -124,6 +127,14 @@ public class CassandraConfig {
 
     public void setKeyspace(String keyspace) {
         this.keyspace = keyspace;
+    }
+
+    public String getTable() {
+        return table;
+    }
+
+    public void setTable(String table) {
+        this.table = table;
     }
 
     public int getReplicationFactor() {
