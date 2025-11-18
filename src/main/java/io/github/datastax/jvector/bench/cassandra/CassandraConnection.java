@@ -131,8 +131,10 @@ public class CassandraConnection implements AutoCloseable {
 
         // Create index
         String createIndex = String.format(
-            "CREATE CUSTOM INDEX IF NOT EXISTS vectors_ann_idx ON vectors(vector) " +
+            "CREATE CUSTOM INDEX IF NOT EXISTS %s_ann_idx ON %s(vector) " +
             "USING 'StorageAttachedIndex' WITH OPTIONS = %s",
+            config.getTable(),
+            config.getTable(),
             indexConfig.toCqlOptions()
         );
         logger.debug("Creating index: {}", createIndex);
@@ -192,11 +194,12 @@ public class CassandraConnection implements AutoCloseable {
     public void prepareSearch(SearchConfig searchConfig) {
         String cql = String.format(
             "SELECT id, vector, similarity_%s(vector, ?) as score " +
-            "FROM %s.vectors " +
+            "FROM %s.%s " +
             "ORDER BY vector ANN OF ? " +
             "LIMIT ?",
             searchConfig.getSimilarityFunction().toLowerCase(),
-            config.getKeyspace()
+            config.getKeyspace(),
+            config.getTable()
         );
 
         this.searchStatement = session.prepare(cql);
@@ -311,7 +314,7 @@ public class CassandraConnection implements AutoCloseable {
                     config.getKeyspace(),
                     name);
             Row row = session.execute(cql).one();
-            return (row == null) ? null : row.getDouble("build_time");
+            return (row == null) ? 0.0 : row.getDouble("build_time");
         } catch (Exception e) {
             logger.error("Error while getting index build time", e);
             return 0.0;
