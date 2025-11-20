@@ -272,7 +272,7 @@ public class CassandraBenchmarkRunner {
 
         // Validate actual row count in Cassandra
         logger.info("Validating loaded data (COUNT query may take some time)...");
-        String countQuery = String.format("SELECT COUNT(*) FROM %s.vectors", connection.getConfig().getKeyspace());
+        String countQuery = String.format("SELECT COUNT(*) FROM %s.%s", connection.getConfig().getKeyspace(), connection.getConfig().getTable());
         SimpleStatement statement = SimpleStatement.builder(countQuery)
             .setTimeout(Duration.ofSeconds(120))  // COUNT(*) can be slow on large tables
             .build();
