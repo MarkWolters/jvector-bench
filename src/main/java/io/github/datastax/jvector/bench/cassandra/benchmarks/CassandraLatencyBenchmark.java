@@ -105,7 +105,7 @@ public class CassandraLatencyBenchmark implements CassandraBenchmark {
         double p99 = getPercentile(latencies, 0.99) / 1e6;
         double p999 = getPercentile(latencies, 0.999) / 1e6;
 
-        logger.info("Latency benchmark complete: mean={:.3f}ms, p50={:.3f}ms, p99={:.3f}ms, p999={:.3f}ms",
+        logger.info("Latency benchmark complete: mean={}ms, p50={}ms, p99={}ms, p999={}ms",
             mean, p50, p99, p999);
 
         List<Metric> metrics = new ArrayList<>();

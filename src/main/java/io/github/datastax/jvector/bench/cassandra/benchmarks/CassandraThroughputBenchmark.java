@@ -117,7 +117,7 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
             qpsSamples[run] = totalQueries / elapsed;
             SINK += counter.sum();
 
-            logger.info("Test run {}: {:.1f} QPS", run, qpsSamples[run]);
+            logger.info("Test run {}: {} QPS", run, qpsSamples[run]);
         }
 
         // Calculate statistics
@@ -125,7 +125,7 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
         double stdDev = Math.sqrt(StatUtils.variance(qpsSamples));
         double cv = (stdDev / avgQps) * 100;
 
-        logger.info("Throughput benchmark complete: {:.1f} ± {:.1f} QPS (CV: {:.1f}%)",
+        logger.info("Throughput benchmark complete: {} ± {} QPS (CV: {}%)",
             avgQps, stdDev, cv);
 
         List<Metric> metrics = new ArrayList<>();

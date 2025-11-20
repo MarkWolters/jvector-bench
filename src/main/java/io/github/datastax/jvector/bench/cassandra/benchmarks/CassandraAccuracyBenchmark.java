@@ -89,12 +89,12 @@ public class CassandraAccuracyBenchmark implements CassandraBenchmark {
             ds.groundTruth, results, topK
         );
 
-        logger.info("Accuracy benchmark complete: Recall@{}={:.4f}, MAP@{}={:.4f}",
+        logger.info("Accuracy benchmark complete: Recall@{}={}, MAP@{}={}",
             topK, recall, topK, map);
 
         // Log warning if recall seems suspiciously low
         if (recall < 0.5) {
-            logger.warn("WARNING: Recall@{} is unusually low ({:.4f}). " +
+            logger.warn("WARNING: Recall@{} is unusually low ({}). " +
                        "This may indicate a configuration mismatch or data loading issue.", topK, recall);
         }
 

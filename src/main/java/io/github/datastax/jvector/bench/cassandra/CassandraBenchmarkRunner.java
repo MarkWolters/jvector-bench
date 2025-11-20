@@ -191,7 +191,27 @@ public class CassandraBenchmarkRunner {
 
         int batchSize = loadConfig.getBatchSize();
         int concurrency = loadConfig.getConcurrency();
-        Semaphore semaphore = new Semaphore(concurrency);
+        
+        // Create backpressure controller if enabled
+        BackpressureController backpressure = null;
+        if (loadConfig.isEnableBackpressure()) {
+            backpressure = new BackpressureController(
+                concurrency,
+                loadConfig.getBackpressureErrorThreshold(),
+                loadConfig.getBackpressureWindowSize(),
+                loadConfig.getBackpressureMinDelayMs(),
+                loadConfig.getBackpressureMaxDelayMs()
+            );
+            logger.info("Backpressure enabled: errorThreshold={}, windowSize={}, minDelay={}ms, maxDelay={}ms",
+                loadConfig.getBackpressureErrorThreshold(),
+                loadConfig.getBackpressureWindowSize(),
+                loadConfig.getBackpressureMinDelayMs(),
+                loadConfig.getBackpressureMaxDelayMs());
+        } else {
+            logger.info("Backpressure disabled - using fixed concurrency");
+        }
+        
+        Semaphore semaphore = loadConfig.isEnableBackpressure() ? null : new Semaphore(concurrency);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger errorCount = new AtomicInteger(0);
@@ -219,7 +239,15 @@ public class CassandraBenchmarkRunner {
             // Execute batch asynchronously with rate limiting
             final int batchStartIdx = i;
             final int batchEndIdx = batchEnd;
-            semaphore.acquire();
+            final BackpressureController bp = backpressure;
+            
+            // Acquire permit (either from backpressure controller or semaphore)
+            if (bp != null) {
+                bp.acquire();
+            } else {
+                semaphore.acquire();
+            }
+            
             CompletableFuture<Void> future = connection.getSession()
                 .executeAsync(batch.build())
                 .toCompletableFuture()
@@ -229,17 +257,35 @@ public class CassandraBenchmarkRunner {
                             logger.error("Failed to load batch [{}-{}): {}",
                                 batchStartIdx, batchEndIdx, throwable.getMessage());
                             errorCount.incrementAndGet();
+                            if (bp != null) {
+                                bp.recordError();
+                            }
                         } else {
                             int completed = successCount.incrementAndGet();
+                            if (bp != null) {
+                                bp.recordSuccess();
+                            }
+                            
+                            // Log progress with backpressure stats if enabled
                             if (completed % 10 == 0 || completed == totalBatches) {
                                 int vectorsLoaded = Math.min(completed * batchSize, totalVectors);
-                                logger.info("Progress: {} / {} batches ({} / {} vectors, {:.1f}%)",
+                                String progressMsg = String.format("Progress: %d / %d batches (%d / %d vectors, %.1f%%)",
                                     completed, totalBatches, vectorsLoaded, totalVectors,
                                     (vectorsLoaded * 100.0) / totalVectors);
+                                
+                                if (bp != null) {
+                                    progressMsg += " - " + bp.getStats();
+                                }
+                                
+                                logger.info(progressMsg);
                             }
                         }
                     } finally {
-                        semaphore.release();
+                        if (bp != null) {
+                            bp.release();
+                        } else {
+                            semaphore.release();
+                        }
                     }
                     return null;
                 });
@@ -252,9 +298,14 @@ public class CassandraBenchmarkRunner {
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         double elapsed = (System.nanoTime() - startTime) / 1e9;
-        logger.info("Data loading finished in {:.2f} seconds ({:.0f} vectors/sec)",
+        logger.info("Data loading finished in {} seconds ({} vectors/sec)",
             elapsed, totalVectors / elapsed);
         logger.info("Success: {} batches, Errors: {} batches", successCount.get(), errorCount.get());
+        
+        // Log final backpressure statistics
+        if (backpressure != null) {
+            logger.info("Final backpressure stats: {}", backpressure.getStats());
+        }
 
         // verify the index is built
         connection.waitForIndexBuild();

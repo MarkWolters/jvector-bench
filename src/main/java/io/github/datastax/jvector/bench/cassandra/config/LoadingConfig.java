@@ -37,6 +37,21 @@ public class LoadingConfig {
     @JsonProperty("drop_existing")
     private boolean dropExisting = false;
 
+    @JsonProperty("enable_backpressure")
+    private boolean enableBackpressure = true;
+
+    @JsonProperty("backpressure_error_threshold")
+    private double backpressureErrorThreshold = 0.1;
+
+    @JsonProperty("backpressure_window_size")
+    private int backpressureWindowSize = 100;
+
+    @JsonProperty("backpressure_min_delay_ms")
+    private long backpressureMinDelayMs = 0;
+
+    @JsonProperty("backpressure_max_delay_ms")
+    private long backpressureMaxDelayMs = 5000;
+
     public LoadingConfig() {
     }
 
@@ -106,9 +121,49 @@ public class LoadingConfig {
         this.dropExisting = dropExisting;
     }
 
+    public boolean isEnableBackpressure() {
+        return enableBackpressure;
+    }
+
+    public void setEnableBackpressure(boolean enableBackpressure) {
+        this.enableBackpressure = enableBackpressure;
+    }
+
+    public double getBackpressureErrorThreshold() {
+        return backpressureErrorThreshold;
+    }
+
+    public void setBackpressureErrorThreshold(double backpressureErrorThreshold) {
+        this.backpressureErrorThreshold = backpressureErrorThreshold;
+    }
+
+    public int getBackpressureWindowSize() {
+        return backpressureWindowSize;
+    }
+
+    public void setBackpressureWindowSize(int backpressureWindowSize) {
+        this.backpressureWindowSize = backpressureWindowSize;
+    }
+
+    public long getBackpressureMinDelayMs() {
+        return backpressureMinDelayMs;
+    }
+
+    public void setBackpressureMinDelayMs(long backpressureMinDelayMs) {
+        this.backpressureMinDelayMs = backpressureMinDelayMs;
+    }
+
+    public long getBackpressureMaxDelayMs() {
+        return backpressureMaxDelayMs;
+    }
+
+    public void setBackpressureMaxDelayMs(long backpressureMaxDelayMs) {
+        this.backpressureMaxDelayMs = backpressureMaxDelayMs;
+    }
+
     @Override
     public String toString() {
-        return String.format("LoadingConfig{batchSize=%d, concurrency=%d, logged=%s}",
-            batchSize, concurrency, logged);
+        return String.format("LoadingConfig{batchSize=%d, concurrency=%d, logged=%s, backpressure=%s}",
+            batchSize, concurrency, logged, enableBackpressure);
     }
 }
