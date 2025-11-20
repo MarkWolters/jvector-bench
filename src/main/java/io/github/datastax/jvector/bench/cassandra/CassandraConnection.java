@@ -192,7 +192,8 @@ public class CassandraConnection implements AutoCloseable {
      * Prepare the search statement for repeated execution.
      */
     public void prepareSearch(SearchConfig searchConfig) {
-        String cql = String.format(
+        StringBuilder cqlBuilder = new StringBuilder();
+        cqlBuilder.append(String.format(
             "SELECT id, vector, similarity_%s(vector, ?) as score " +
             "FROM %s.%s " +
             "ORDER BY vector ANN OF ? " +
@@ -200,8 +201,15 @@ public class CassandraConnection implements AutoCloseable {
             searchConfig.getSimilarityFunction().toLowerCase(),
             config.getKeyspace(),
             config.getTable()
-        );
-
+        ));
+        
+        // Add ANN options if configured
+        String annOptions = searchConfig.buildAnnOptionsClause();
+        if (annOptions != null) {
+            cqlBuilder.append(annOptions);
+        }
+        
+        String cql = cqlBuilder.toString();
         this.searchStatement = session.prepare(cql);
         logger.debug("Prepared search statement: {}", cql);
     }

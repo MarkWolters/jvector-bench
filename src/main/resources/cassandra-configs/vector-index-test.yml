@@ -1,0 +1,20 @@
+# Test configuration with search parameters enabled
+# This file demonstrates how to use the new query-time parameters
+
+vector_index:
+  dimension: 128
+  similarity_function: "EUCLIDEAN"
+  maximum_node_connections: 16
+  construction_beam_width: 100
+  source_model: "OTHER"
+  enable_hierarchy: false
+  
+  # Search-time parameters (ANN query options)
+  search_config:
+    # Retrieve and rerank 100 candidates
+    rerank_k: 100
+    
+    # Enable pruning for better performance
+    use_pruning: true
+
+# Made with Bob

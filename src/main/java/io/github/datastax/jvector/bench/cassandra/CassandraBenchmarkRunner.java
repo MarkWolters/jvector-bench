@@ -329,8 +329,18 @@ public class CassandraBenchmarkRunner {
         // Connect and run benchmarks
         try (CassandraConnection connection = CassandraConnection.connect(cassConfig)) {
             // Create search configuration
-            // For now, use defaults - similarity function should match the index
-            SearchConfig searchConfig = new SearchConfig();
+            // Use search config from index config if available, otherwise use defaults
+            SearchConfig searchConfig;
+            if (indexConfig.getSearchConfig() != null) {
+                searchConfig = indexConfig.getSearchConfig();
+                // Override similarity function to match index if not set
+                if (searchConfig.getSimilarityFunction() == null) {
+                    searchConfig.setSimilarityFunction(indexConfig.getSimilarityFunction());
+                }
+            } else {
+                searchConfig = new SearchConfig();
+                searchConfig.setSimilarityFunction(indexConfig.getSimilarityFunction());
+            }
             searchConfig.setReadConsistency(cassConfig.getReadConsistencyLevel());
 
             // Create benchmark instances

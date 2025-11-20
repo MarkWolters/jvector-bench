@@ -25,3 +25,16 @@ vector_index:
 
   # Enable hierarchical indexing (requires jvector v4+)
   enable_hierarchy: false
+  
+  # Optional search-time parameters (ANN query options)
+  search_config:
+    # rerank_k: Number of candidates to rerank during ANN search
+    # Higher values = better recall, slower queries
+    # If not specified, Cassandra uses a default based on limit and compression
+    # Must be >= limit or <= 0 (0 or negative means use limit, skip reranking)
+    # rerank_k: 100
+    
+    # use_pruning: Enable/disable pruning during search
+    # Pruning can improve performance but may slightly reduce recall
+    # Default: true
+    # use_pruning: true

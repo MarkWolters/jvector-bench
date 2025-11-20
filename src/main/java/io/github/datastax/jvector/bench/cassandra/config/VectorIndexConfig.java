@@ -47,6 +47,9 @@ public class VectorIndexConfig {
 
     @JsonProperty("enable_hierarchy")
     private boolean enableHierarchy = false;
+    
+    @JsonProperty("search_config")
+    private SearchConfig searchConfig;
 
     private static Map<String,Object> params = new HashMap<>();
 
@@ -163,6 +166,14 @@ public class VectorIndexConfig {
 
     public void setEnableHierarchy(boolean enableHierarchy) {
         this.enableHierarchy = enableHierarchy;
+    }
+    
+    public SearchConfig getSearchConfig() {
+        return searchConfig;
+    }
+    
+    public void setSearchConfig(SearchConfig searchConfig) {
+        this.searchConfig = searchConfig;
     }
 
     @Override

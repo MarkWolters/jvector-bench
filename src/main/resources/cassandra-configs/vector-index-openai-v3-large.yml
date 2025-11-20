@@ -8,3 +8,11 @@ vector_index:
   construction_beam_width: 100
   source_model: "OPENAI_V3_LARGE"
   enable_hierarchy: false
+  
+  # Optional search-time parameters (ANN query options)
+  search_config:
+    # rerank_k: Number of candidates to rerank during ANN search
+    # rerank_k: 100
+    
+    # use_pruning: Enable/disable pruning during search (default: true)
+    # use_pruning: true
