@@ -308,7 +308,7 @@ public class CassandraBenchmarkRunner {
         }
 
         // verify the index is built
-        connection.waitForIndexBuild(ds.name);
+        connection.waitForIndexBuild();
         double endTime = (System.nanoTime() - startTime) / 1e9;
         connection.writeIndexBuildTime(ds.name, endTime);
 
