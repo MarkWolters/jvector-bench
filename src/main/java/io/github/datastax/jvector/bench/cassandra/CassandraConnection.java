@@ -149,12 +149,12 @@ public class CassandraConnection implements AutoCloseable {
      * Wait for vector index to be built and ready.
      * Polls system tables until index is available.
      */
-    public void waitForIndexBuild() {
+    public void waitForIndexBuild(String dataset) {
         logger.info("Waiting for index build to complete...");
 
         // Query to check if index exists
         String checkIndex = "SELECT index_name FROM system_schema.indexes " +
-                           "WHERE keyspace_name = ? AND table_name = ?";
+                           "WHERE keyspace_name = ? AND dataset = ?";
 
         PreparedStatement ps = session.prepare(checkIndex);
 
@@ -162,7 +162,7 @@ public class CassandraConnection implements AutoCloseable {
         int maxAttempts = 300; // 5 minutes with 1 second sleep
 
         while (attempts < maxAttempts) {
-            ResultSet rs = session.execute(ps.bind(config.getKeyspace(), config.getTable()));
+            ResultSet rs = session.execute(ps.bind(config.getKeyspace(), dataset));
             Row row = rs.one();
 
             if (row != null) {
