@@ -19,7 +19,6 @@ package io.github.datastax.jvector.bench.cassandra;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -37,8 +36,8 @@ public class BackpressureController {
     private final long minDelayMs;
     private final long maxDelayMs;
     
-    private final Semaphore semaphore;
     private final AtomicInteger currentConcurrency;
+    private final AtomicInteger inFlightRequests;
     private final AtomicInteger successCount;
     private final AtomicInteger errorCount;
     private final AtomicLong currentDelayMs;
@@ -78,8 +77,8 @@ public class BackpressureController {
         this.minDelayMs = minDelayMs;
         this.maxDelayMs = maxDelayMs;
         
-        this.semaphore = new Semaphore(maxConcurrency);
         this.currentConcurrency = new AtomicInteger(maxConcurrency);
+        this.inFlightRequests = new AtomicInteger(0);
         this.successCount = new AtomicInteger(0);
         this.errorCount = new AtomicInteger(0);
         this.currentDelayMs = new AtomicLong(minDelayMs);
@@ -95,7 +94,12 @@ public class BackpressureController {
      * Also applies any configured delay for rate limiting.
      */
     public void acquire() throws InterruptedException {
-        semaphore.acquire();
+        // Wait until we're below the concurrency limit
+        while (inFlightRequests.get() >= currentConcurrency.get()) {
+            Thread.sleep(10);  // Brief sleep to avoid busy-waiting
+        }
+        
+        inFlightRequests.incrementAndGet();
         
         // Apply delay if configured
         long delay = currentDelayMs.get();
@@ -108,7 +112,7 @@ public class BackpressureController {
      * Release a permit after batch completion.
      */
     public void release() {
-        semaphore.release();
+        inFlightRequests.decrementAndGet();
     }
     
     /**
@@ -154,12 +158,8 @@ public class BackpressureController {
         int current = currentConcurrency.get();
         int newConcurrency = Math.max(MIN_CONCURRENCY, (int) (current * BACKOFF_FACTOR));
         
-        // Reduce available permits
-        int permitsToReduce = current - newConcurrency;
-        if (permitsToReduce > 0) {
-            semaphore.acquireUninterruptibly(permitsToReduce);
-            currentConcurrency.set(newConcurrency);
-        }
+        // Simply update the concurrency limit - in-flight requests will naturally drain
+        currentConcurrency.set(newConcurrency);
         
         // Increase delay exponentially
         long currentDelay = currentDelayMs.get();
@@ -171,7 +171,7 @@ public class BackpressureController {
         
         lastAdjustmentTime.set(System.currentTimeMillis());
         
-        logger.warn("BACKPRESSURE TRIGGERED: Error rate {}% - Reducing concurrency {} -> {}, delay {} -> {}ms",
+        logger.warn("BACKPRESSURE TRIGGERED: Error rate {:.1f}% - Reducing concurrency {} -> {}, delay {} -> {}ms",
                     errorRate * 100, current, newConcurrency, currentDelay, newDelay);
     }
     
@@ -186,12 +186,8 @@ public class BackpressureController {
         
         int newConcurrency = Math.min(maxConcurrency, (int) (current * RECOVERY_FACTOR));
         
-        // Add back permits
-        int permitsToAdd = newConcurrency - current;
-        if (permitsToAdd > 0) {
-            semaphore.release(permitsToAdd);
-            currentConcurrency.set(newConcurrency);
-        }
+        // Simply update the concurrency limit - new requests can now proceed
+        currentConcurrency.set(newConcurrency);
         
         // Reduce delay
         long currentDelay = currentDelayMs.get();
