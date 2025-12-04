@@ -71,6 +71,7 @@ public class CassandraLatencyBenchmark implements CassandraBenchmark {
         double mean = 0.0;
         double m2 = 0.0;
         int count = 0;
+        int failedQueries = 0;
 
         // Run queries and collect latencies
         for (int run = 0; run < queryRuns; run++) {
@@ -83,6 +84,13 @@ public class CassandraLatencyBenchmark implements CassandraBenchmark {
                 SearchResult sr = connection.search(query, topK, searchConfig);
                 long duration = System.nanoTime() - start;
 
+                // Skip failed queries (null result)
+                if (sr == null) {
+                    failedQueries++;
+                    logger.debug("Query {} failed, skipping latency measurement", i);
+                    continue;
+                }
+
                 latencies.add(duration);
                 SINK += sr.getNodes().length;
 
@@ -94,18 +102,29 @@ public class CassandraLatencyBenchmark implements CassandraBenchmark {
             }
         }
 
+        // Log failure statistics
+        if (failedQueries > 0) {
+            int totalAttempts = totalQueries * queryRuns;
+            double failureRate = (failedQueries * 100.0) / totalAttempts;
+            logger.warn("Latency benchmark completed with {} failed queries out of {} ({:.2f}%)",
+                failedQueries, totalAttempts, failureRate);
+        }
+
         // Convert to milliseconds
         mean /= 1e6;
         double stdDev = (count > 0) ? Math.sqrt(m2 / count) / 1e6 : 0.0;
 
-        // Calculate percentiles
-        Collections.sort(latencies);
-        double p50 = getPercentile(latencies, 0.50) / 1e6;
-        double p95 = getPercentile(latencies, 0.95) / 1e6;
-        double p99 = getPercentile(latencies, 0.99) / 1e6;
-        double p999 = getPercentile(latencies, 0.999) / 1e6;
+        // Calculate percentiles (only if we have successful queries)
+        double p50 = 0.0, p95 = 0.0, p99 = 0.0, p999 = 0.0;
+        if (!latencies.isEmpty()) {
+            Collections.sort(latencies);
+            p50 = getPercentile(latencies, 0.50) / 1e6;
+            p95 = getPercentile(latencies, 0.95) / 1e6;
+            p99 = getPercentile(latencies, 0.99) / 1e6;
+            p999 = getPercentile(latencies, 0.999) / 1e6;
+        }
 
-        logger.info("Latency benchmark complete: mean={}ms, p50={}ms, p99={}ms, p999={}ms",
+        logger.info("Latency benchmark complete: mean={:.3f}ms, p50={:.3f}ms, p99={:.3f}ms, p999={:.3f}ms",
             mean, p50, p99, p999);
 
         List<Metric> metrics = new ArrayList<>();
@@ -115,6 +134,14 @@ public class CassandraLatencyBenchmark implements CassandraBenchmark {
         metrics.add(Metric.of("p95 Latency (ms)", DEFAULT_FORMAT, p95));
         metrics.add(Metric.of("p99 Latency (ms)", DEFAULT_FORMAT, p99));
         metrics.add(Metric.of("p999 Latency (ms)", DEFAULT_FORMAT, p999));
+        
+        // Add failure metrics if there were any failures
+        if (failedQueries > 0) {
+            int totalAttempts = totalQueries * queryRuns;
+            double failureRate = (failedQueries * 100.0) / totalAttempts;
+            metrics.add(Metric.of("Failed Queries", ".0f", (double) failedQueries));
+            metrics.add(Metric.of("Failure Rate (%)", ".2f", failureRate));
+        }
 
         return metrics;
     }

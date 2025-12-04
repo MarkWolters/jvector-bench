@@ -216,22 +216,29 @@ public class CassandraConnection implements AutoCloseable {
 
     /**
      * Execute a vector similarity search.
+     * Returns null if the query fails (timeout, error, etc.) to allow benchmarks to continue.
      */
     public SearchResult search(VectorFloat<?> query, int topK, SearchConfig searchConfig) {
         if (searchStatement == null) {
             prepareSearch(searchConfig);
         }
 
-        List<Float> queryList = vectorToList(query);
-        CqlVector<Float> queryVector = CqlVector.newInstance(queryList);
+        try {
+            List<Float> queryList = vectorToList(query);
+            CqlVector<Float> queryVector = CqlVector.newInstance(queryList);
 
-        BoundStatement bound = searchStatement.bind(queryVector, queryVector, topK)
-            .setConsistencyLevel(searchConfig.getReadConsistency())
-            .setTimeout(Duration.ofMillis(searchConfig.getQueryTimeoutMs()));
+            BoundStatement bound = searchStatement.bind(queryVector, queryVector, topK)
+                .setConsistencyLevel(searchConfig.getReadConsistency())
+                .setTimeout(Duration.ofMillis(searchConfig.getQueryTimeoutMs()));
 
-        ResultSet rs = session.execute(bound);
+            ResultSet rs = session.execute(bound);
 
-        return convertToSearchResult(rs);
+            return convertToSearchResult(rs);
+        } catch (Exception e) {
+            // Log the error but don't throw - allow benchmark to continue
+            logger.warn("Query failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
+            return null;
+        }
     }
 
     /**

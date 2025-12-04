@@ -76,6 +76,9 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
         // Prepare search statement once
         connection.prepareSearch(searchConfig);
 
+        // Track failures across all phases
+        final java.util.concurrent.atomic.AtomicInteger totalFailures = new java.util.concurrent.atomic.AtomicInteger(0);
+
         // Warmup phase
         logger.info("Warming up with {} runs...", numWarmupRuns);
         for (int warmup = 0; warmup < numWarmupRuns; warmup++) {
@@ -84,7 +87,11 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
                 .forEach(i -> {
                     VectorFloat<?> query = ds.queryVectors.get(i);
                     SearchResult sr = connection.search(query, topK, searchConfig);
-                    SINK += sr.getNodes().length;
+                    if (sr != null) {
+                        SINK += sr.getNodes().length;
+                    } else {
+                        totalFailures.incrementAndGet();
+                    }
                 });
             logger.debug("Warmup run {} complete", warmup);
         }
@@ -92,6 +99,7 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
         // Test phase
         logger.info("Running {} test runs...", numTestRuns);
         double[] qpsSamples = new double[numTestRuns];
+        int[] successCounts = new int[numTestRuns];
 
         for (int run = 0; run < numTestRuns; run++) {
             // GC between runs
@@ -104,20 +112,31 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
 
             long start = System.nanoTime();
             LongAdder counter = new LongAdder();
+            java.util.concurrent.atomic.AtomicInteger successCount = new java.util.concurrent.atomic.AtomicInteger(0);
+            java.util.concurrent.atomic.AtomicInteger failCount = new java.util.concurrent.atomic.AtomicInteger(0);
 
             IntStream.range(0, totalQueries)
                 .parallel()
                 .forEach(i -> {
                     VectorFloat<?> query = ds.queryVectors.get(i);
                     SearchResult sr = connection.search(query, topK, searchConfig);
-                    counter.add(sr.getNodes().length);
+                    if (sr != null) {
+                        counter.add(sr.getNodes().length);
+                        successCount.incrementAndGet();
+                    } else {
+                        failCount.incrementAndGet();
+                        totalFailures.incrementAndGet();
+                    }
                 });
 
             double elapsed = (System.nanoTime() - start) / 1e9;
-            qpsSamples[run] = totalQueries / elapsed;
+            int successful = successCount.get();
+            successCounts[run] = successful;
+            qpsSamples[run] = successful / elapsed;  // QPS based on successful queries only
             SINK += counter.sum();
 
-            logger.info("Test run {}: {} QPS", run, qpsSamples[run]);
+            logger.info("Test run {}: {:.1f} QPS ({} successful, {} failed)",
+                run, qpsSamples[run], successful, failCount.get());
         }
 
         // Calculate statistics
@@ -125,13 +144,30 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
         double stdDev = Math.sqrt(StatUtils.variance(qpsSamples));
         double cv = (stdDev / avgQps) * 100;
 
-        logger.info("Throughput benchmark complete: {} ± {} QPS (CV: {}%)",
+        // Calculate average success rate
+        double avgSuccessCount = StatUtils.mean(java.util.Arrays.stream(successCounts).asDoubleStream().toArray());
+        double successRate = (avgSuccessCount / totalQueries) * 100.0;
+
+        logger.info("Throughput benchmark complete: {:.1f} ± {:.1f} QPS (CV: {:.1f}%)",
             avgQps, stdDev, cv);
+        
+        if (totalFailures.get() > 0) {
+            logger.warn("Total failed queries across all runs: {}", totalFailures.get());
+        }
 
         List<Metric> metrics = new ArrayList<>();
         metrics.add(Metric.of("Avg QPS (of " + numTestRuns + ")", DEFAULT_FORMAT, avgQps));
         metrics.add(Metric.of("± Std Dev", DEFAULT_FORMAT, stdDev));
         metrics.add(Metric.of("CV %", DEFAULT_FORMAT, cv));
+        
+        // Add failure metrics if there were any failures
+        if (totalFailures.get() > 0) {
+            int totalAttempts = totalQueries * (numWarmupRuns + numTestRuns);
+            double failureRate = (totalFailures.get() * 100.0) / totalAttempts;
+            metrics.add(Metric.of("Success Rate (%)", ".2f", successRate));
+            metrics.add(Metric.of("Total Failed Queries", ".0f", (double) totalFailures.get()));
+            metrics.add(Metric.of("Overall Failure Rate (%)", ".2f", failureRate));
+        }
 
         return metrics;
     }

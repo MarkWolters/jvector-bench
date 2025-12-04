@@ -68,18 +68,36 @@ public class CassandraAccuracyBenchmark implements CassandraBenchmark {
         // Prepare search statement once
         connection.prepareSearch(searchConfig);
 
+        // Track failures
+        final java.util.concurrent.atomic.AtomicInteger failedQueries = new java.util.concurrent.atomic.AtomicInteger(0);
+
         // Execute all queries in parallel and collect results
         List<SearchResult> results = IntStream.range(0, totalQueries)
             .parallel()
             .mapToObj(i -> {
                 VectorFloat<?> query = ds.queryVectors.get(i);
-                return connection.search(query, topK, searchConfig);
+                SearchResult sr = connection.search(query, topK, searchConfig);
+                if (sr == null) {
+                    failedQueries.incrementAndGet();
+                    logger.debug("Query {} failed, will be excluded from accuracy calculation", i);
+                    // Return empty result for failed queries to maintain index alignment
+                    return new SearchResult(new SearchResult.NodeScore[0], -1, -1, -1, -1, -1.0f);
+                }
+                return sr;
             })
             .collect(Collectors.toList());
 
         logger.debug("All queries executed, calculating accuracy metrics...");
 
-        // Calculate recall
+        // Log failure statistics
+        int failed = failedQueries.get();
+        if (failed > 0) {
+            double failureRate = (failed * 100.0) / totalQueries;
+            logger.warn("Accuracy benchmark had {} failed queries out of {} ({:.2f}%)",
+                failed, totalQueries, failureRate);
+        }
+
+        // Calculate recall (AccuracyMetrics will handle empty results gracefully)
         double recall = AccuracyMetrics.recallFromSearchResults(
             ds.groundTruth, results, topK, topK
         );
@@ -89,18 +107,30 @@ public class CassandraAccuracyBenchmark implements CassandraBenchmark {
             ds.groundTruth, results, topK
         );
 
-        logger.info("Accuracy benchmark complete: Recall@{}={}, MAP@{}={}",
+        logger.info("Accuracy benchmark complete: Recall@{}={:.4f}, MAP@{}={:.4f}",
             topK, recall, topK, map);
 
         // Log warning if recall seems suspiciously low
-        if (recall < 0.5) {
-            logger.warn("WARNING: Recall@{} is unusually low ({}). " +
+        if (recall < 0.5 && failed == 0) {
+            logger.warn("WARNING: Recall@{} is unusually low ({:.4f}). " +
                        "This may indicate a configuration mismatch or data loading issue.", topK, recall);
+        } else if (recall < 0.5 && failed > 0) {
+            logger.warn("WARNING: Recall@{} is unusually low ({:.4f}). " +
+                       "This is likely due to {} failed queries.", topK, recall, failed);
         }
 
         List<Metric> metrics = new ArrayList<>();
         metrics.add(Metric.of("Recall@" + topK, DEFAULT_FORMAT, recall));
         metrics.add(Metric.of("MAP@" + topK, DEFAULT_FORMAT, map));
+        
+        // Add failure metrics if there were any failures
+        if (failed > 0) {
+            double failureRate = (failed * 100.0) / totalQueries;
+            double successRate = ((totalQueries - failed) * 100.0) / totalQueries;
+            metrics.add(Metric.of("Failed Queries", ".0f", (double) failed));
+            metrics.add(Metric.of("Success Rate (%)", ".2f", successRate));
+            metrics.add(Metric.of("Failure Rate (%)", ".2f", failureRate));
+        }
 
         return metrics;
     }

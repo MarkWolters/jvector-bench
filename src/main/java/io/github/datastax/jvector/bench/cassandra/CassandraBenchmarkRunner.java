@@ -402,33 +402,54 @@ public class CassandraBenchmarkRunner {
 
             // Collect all metrics
             List<BenchResult> results = new ArrayList<>();
+            boolean hadFailures = false;
 
             // Run each benchmark
             for (CassandraBenchmark benchmark : benchmarks) {
                 logger.info("Running {}...", benchmark.getBenchmarkName());
 
-                List<Metric> metrics = benchmark.runBenchmark(
-                    connection,
-                    ds,
-                    topK,
-                    searchConfig,
-                    queryRuns
-                );
+                try {
+                    List<Metric> metrics = benchmark.runBenchmark(
+                        connection,
+                        ds,
+                        topK,
+                        searchConfig,
+                        queryRuns
+                    );
 
-                // Convert metrics to BenchResult format
-                Map<String, Object> metricParams = new HashMap<>();
-                metricParams.put("dataset", ds.name);
-                metricParams.put("topK", topK);
-                metricParams.put("queryRuns", queryRuns);
-                metricParams.put("benchmark", benchmark.getBenchmarkName());
+                    // Convert metrics to BenchResult format
+                    Map<String, Object> metricParams = new HashMap<>();
+                    metricParams.put("dataset", ds.name);
+                    metricParams.put("topK", topK);
+                    metricParams.put("queryRuns", queryRuns);
+                    metricParams.put("benchmark", benchmark.getBenchmarkName());
 
-                for (Metric metric : metrics) {
-                    Map<String, Object> metricMap = new HashMap<>();
-                    metricMap.put(metric.getHeader(), metric.getValue());
-                    results.add(new BenchResult(ds.name, metricParams, metricMap));
+                    for (Metric metric : metrics) {
+                        Map<String, Object> metricMap = new HashMap<>();
+                        metricMap.put(metric.getHeader(), metric.getValue());
+                        results.add(new BenchResult(ds.name, metricParams, metricMap));
+                        
+                        // Check if this metric indicates failures
+                        if (metric.getHeader().contains("Failed") || metric.getHeader().contains("Failure Rate")) {
+                            hadFailures = true;
+                        }
+                    }
+
+                    logger.info("{} complete", benchmark.getBenchmarkName());
+                } catch (Exception e) {
+                    logger.error("Benchmark {} failed with exception: {}", benchmark.getBenchmarkName(), e.getMessage(), e);
+                    logger.warn("Continuing with remaining benchmarks...");
+                    hadFailures = true;
                 }
-
-                logger.info("{} complete", benchmark.getBenchmarkName());
+            }
+            
+            // Log summary of failures if any occurred
+            if (hadFailures) {
+                logger.warn("=".repeat(80));
+                logger.warn("BENCHMARK COMPLETED WITH FAILURES");
+                logger.warn("Some queries failed during benchmark execution. Check the logs above for details.");
+                logger.warn("Results reflect only successful queries. Failed queries were excluded from metrics.");
+                logger.warn("=".repeat(80));
             }
             results.add(new BenchResult(ds.name, VectorIndexConfig.getParams(),
                     Map.of("Index Build Time", connection.getIndexBuildTime(ds.name))));
