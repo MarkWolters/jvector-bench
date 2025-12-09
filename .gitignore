@@ -33,3 +33,7 @@ target/
 .claude/
 
 .mvn/
+
+.vscode/
+
+jvector-bench.code-workspace

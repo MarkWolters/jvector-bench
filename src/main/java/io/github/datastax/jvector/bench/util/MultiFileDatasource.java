@@ -31,6 +31,7 @@ public class MultiFileDatasource {
     public final Path queriesPath;
     public final Path groundTruthPath;
     private final static String DATASET_HASH = System.getenv("DATASET_HASH");
+    private final static String IBM_DATASET_HASH = System.getenv("IBM_DATASET_HASH");
 
     public MultiFileDatasource(String name, String basePath, String queriesPath, String groundTruthPath) {
         this.name = name;
@@ -139,5 +140,34 @@ public class MultiFileDatasource {
                 DATASET_HASH + "/cap/Caselaw_gte-Qwen2-1.5B_embeddings_base_6m_norm_shuffle.fvecs",
                 DATASET_HASH + "/cap/Caselaw_gte-Qwen2-1.5B_embeddings_query_10k_norm_shuffle.fvecs",
                 DATASET_HASH + "/cap/cap_6m_gt_norm_shuffle_ip_k100.ivecs"));
+
+        put("datapile-1M", new MultiFileDatasource("datapile-1M",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_base_250m.fvec((0..1000000)), window: (0..1000000)",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_query.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_indices_d384_1m.ivec"));
+        put("datapile-10M", new MultiFileDatasource("datapile-10M",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_distances_d384_10m.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_query.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_indices_d384_10m.ivec"));
+        put("datapile-20M", new MultiFileDatasource("datapile-20M",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_distances_d384_20m.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_query.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_indices_d384_20m.ivec"));
+        put("datapile-50M", new MultiFileDatasource("datapile-50M",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_distances_d384_50m.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_query.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_indices_d384_50m.ivec"));
+        put("datapile-100M", new MultiFileDatasource("datapile-100M",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_distances_d384_100m.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_query.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_indices_d384_100m.ivec"));
+        put("datapile-200M", new MultiFileDatasource("datapile-200M",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_distances_d384_200m.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_query.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_indices_d384_200m.ivec"));
+        put("datapile-250M", new MultiFileDatasource("datapile-250M",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_base_250m.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_query.fvec",
+                IBM_DATASET_HASH + "/ibm/ibm_datapile/datapile_indices_d384_250m.ivec"));
     }};
 }

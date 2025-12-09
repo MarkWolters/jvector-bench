@@ -31,6 +31,9 @@ import io.github.datastax.jvector.bench.cassandra.config.*;
 import io.github.datastax.jvector.bench.util.BenchmarkSummarizer;
 import io.github.datastax.jvector.bench.util.DataSet;
 import io.github.datastax.jvector.bench.util.DataSetLoader;
+import io.github.datastax.jvector.bench.util.DownloadHelper;
+import io.github.datastax.jvector.bench.util.FvecsStreamReader;
+import io.github.datastax.jvector.bench.util.MultiFileDatasource;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -150,26 +153,38 @@ public class CassandraBenchmarkRunner {
         logger.info("Index config: {}", indexConfig);
         logger.info("Loading config: {}", loadConfig);
 
-        // Load dataset
-        logger.info("Loading dataset from disk...");
-        DataSet ds = DataSetLoader.loadDataSet(datasetName);
-        logger.info("Dataset loaded: {} vectors, dimension {}", ds.baseVectors.size(), ds.getDimension());
-
-        // Validate dimension matches
-        if (ds.getDimension() != indexConfig.getDimension()) {
-            throw new IllegalArgumentException(String.format(
-                "Dataset dimension (%d) doesn't match index config dimension (%d)",
-                ds.getDimension(), indexConfig.getDimension()
-            ));
-        }
+        // Download dataset files if needed (same as original logic)
+        logger.info("Checking/downloading dataset files...");
+        MultiFileDatasource mfd = DownloadHelper.maybeDownloadFvecs(datasetName);
+        
+        String baseVectorPath = "fvec/" + mfd.basePath;
+        logger.info("Streaming dataset from: {}", baseVectorPath);
 
         // Connect to Cassandra
         try (CassandraConnection connection = CassandraConnection.connect(cassConfig)) {
+            // Peek at first vector to get dimension and validate
+            int dimension;
+            long totalVectors;
+            try (FvecsStreamReader peekReader = new FvecsStreamReader(baseVectorPath)) {
+                dimension = peekReader.getDimension();
+                totalVectors = peekReader.getTotalVectors();
+            }
+            
+            logger.info("Dataset info: {} vectors, dimension {}", totalVectors, dimension);
+            
+            // Validate dimension matches
+            if (dimension != indexConfig.getDimension()) {
+                throw new IllegalArgumentException(String.format(
+                    "Dataset dimension (%d) doesn't match index config dimension (%d)",
+                    dimension, indexConfig.getDimension()
+                ));
+            }
+
             // Setup schema
             connection.ensureSchema(indexConfig, loadConfig.isDropExisting());
 
-            // Load data
-            loadDataIntoIndex(connection, ds, loadConfig);
+            // Load data using streaming
+            loadDataIntoIndexStreaming(connection, datasetName, baseVectorPath, totalVectors, loadConfig);
 
             logger.info("Dataset loading complete!");
         }
@@ -311,6 +326,195 @@ public class CassandraBenchmarkRunner {
         connection.waitForIndexBuild();
         double endTime = (System.nanoTime() - startTime) / 1e9;
         connection.writeIndexBuildTime(ds.name, endTime);
+
+        // Wait for Cassandra to flush writes before validating
+        logger.info("Waiting for Cassandra to flush writes...");
+        try {
+            Thread.sleep(5000);  // 5 second delay for Cassandra to flush and make data visible
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for flush", e);
+        }
+
+        // Validate actual row count in Cassandra
+        logger.info("Validating loaded data (COUNT query may take some time)...");
+        String countQuery = String.format("SELECT COUNT(*) FROM %s.%s", connection.getConfig().getKeyspace(), connection.getConfig().getTable());
+        SimpleStatement statement = SimpleStatement.builder(countQuery)
+            .setTimeout(Duration.ofSeconds(120))  // COUNT(*) can be slow on large tables
+            .build();
+        long actualCount = connection.getSession().execute(statement).one().getLong(0);
+        logger.info("Actual rows in Cassandra: {} (expected: {})", actualCount, totalVectors);
+
+        if (actualCount != totalVectors) {
+            throw new RuntimeException(String.format(
+                "Data validation failed: expected %d vectors but found %d in Cassandra",
+                totalVectors, actualCount));
+        }
+
+        if (errorCount.get() > 0) {
+            logger.warn("Data loaded successfully despite {} batch errors (likely transient/retried)",
+                errorCount.get());
+        }
+
+        logger.info("Data loading validation successful!");
+    }
+
+    /**
+     * Load dataset vectors into Cassandra using streaming to avoid loading entire dataset into memory.
+     * This is the memory-efficient version for large datasets.
+     */
+    private static void loadDataIntoIndexStreaming(CassandraConnection connection, String datasetName,
+                                                   String baseVectorPath, long totalVectors, LoadingConfig loadConfig)
+        throws Exception {
+
+        logger.info("Streaming {} vectors into Cassandra from {}...", totalVectors, baseVectorPath);
+
+        PreparedStatement insert = connection.getSession().prepare(
+            String.format("INSERT INTO %s.%s (id, vector) VALUES (?, ?)",
+                connection.getConfig().getKeyspace(),
+                connection.getConfig().getTable())
+        );
+
+        int batchSize = loadConfig.getBatchSize();
+        int concurrency = loadConfig.getConcurrency();
+        
+        // Create backpressure controller if enabled
+        BackpressureController backpressure = null;
+        if (loadConfig.isEnableBackpressure()) {
+            backpressure = new BackpressureController(
+                concurrency,
+                loadConfig.getBackpressureErrorThreshold(),
+                loadConfig.getBackpressureWindowSize(),
+                loadConfig.getBackpressureMinDelayMs(),
+                loadConfig.getBackpressureMaxDelayMs()
+            );
+            logger.info("Backpressure enabled: errorThreshold={}, windowSize={}, minDelay={}ms, maxDelay={}ms",
+                loadConfig.getBackpressureErrorThreshold(),
+                loadConfig.getBackpressureWindowSize(),
+                loadConfig.getBackpressureMinDelayMs(),
+                loadConfig.getBackpressureMaxDelayMs());
+        } else {
+            logger.info("Backpressure disabled - using fixed concurrency");
+        }
+        
+        Semaphore semaphore = loadConfig.isEnableBackpressure() ? null : new Semaphore(concurrency);
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger errorCount = new AtomicInteger(0);
+
+        long startTime = System.nanoTime();
+        int totalBatches = (int) ((totalVectors + batchSize - 1) / batchSize);
+
+        logger.info("Loading {} vectors in {} batches (batch size: {}, concurrency: {})",
+            totalVectors, totalBatches, batchSize, concurrency);
+
+        // Stream vectors and process in batches
+        try (FvecsStreamReader reader = new FvecsStreamReader(baseVectorPath)) {
+            int vectorId = 0;
+            BatchStatementBuilder batch = BatchStatement.builder(
+                loadConfig.isLogged() ? BatchType.LOGGED : BatchType.UNLOGGED
+            );
+            int batchStartIdx = 0;
+            int vectorsInBatch = 0;
+
+            while (reader.hasNext()) {
+                VectorFloat<?> vector = reader.next();
+                if (vector == null) {
+                    break;
+                }
+
+                // Add vector to current batch
+                List<Float> vectorList = vectorToList(vector);
+                batch.addStatement(insert.bind(String.valueOf(vectorId), CqlVector.newInstance(vectorList)));
+                vectorsInBatch++;
+                vectorId++;
+
+                // When batch is full or we've reached the end, execute it
+                if (vectorsInBatch >= batchSize || !reader.hasNext()) {
+                    final int batchStart = batchStartIdx;
+                    final int batchEnd = vectorId;
+                    final BackpressureController bp = backpressure;
+                    final BatchStatement batchToExecute = batch.build();
+                    
+                    // Acquire permit (either from backpressure controller or semaphore)
+                    if (bp != null) {
+                        bp.acquire();
+                    } else {
+                        semaphore.acquire();
+                    }
+                    
+                    CompletableFuture<Void> future = connection.getSession()
+                        .executeAsync(batchToExecute)
+                        .toCompletableFuture()
+                        .handle((rs, throwable) -> {
+                            try {
+                                if (throwable != null) {
+                                    logger.error("Failed to load batch [{}-{}): {}",
+                                        batchStart, batchEnd, throwable.getMessage());
+                                    errorCount.incrementAndGet();
+                                    if (bp != null) {
+                                        bp.recordError();
+                                    }
+                                } else {
+                                    int completed = successCount.incrementAndGet();
+                                    if (bp != null) {
+                                        bp.recordSuccess();
+                                    }
+                                    
+                                    // Log progress with backpressure stats if enabled
+                                    if (completed % 10 == 0 || completed == totalBatches) {
+                                        long vectorsLoaded = Math.min((long) completed * batchSize, totalVectors);
+                                        String progressMsg = String.format("Progress: %d / %d batches (%d / %d vectors, %.1f%%)",
+                                            completed, totalBatches, vectorsLoaded, totalVectors,
+                                            (vectorsLoaded * 100.0) / totalVectors);
+                                        
+                                        if (bp != null) {
+                                            progressMsg += " - " + bp.getStats();
+                                        }
+                                        
+                                        logger.info(progressMsg);
+                                    }
+                                }
+                            } finally {
+                                if (bp != null) {
+                                    bp.release();
+                                } else {
+                                    semaphore.release();
+                                }
+                            }
+                            return null;
+                        });
+
+                    futures.add(future);
+                    
+                    // Reset batch for next iteration
+                    batch = BatchStatement.builder(
+                        loadConfig.isLogged() ? BatchType.LOGGED : BatchType.UNLOGGED
+                    );
+                    batchStartIdx = vectorId;
+                    vectorsInBatch = 0;
+                }
+            }
+        }
+
+        // Wait for all batches
+        logger.info("Waiting for all batches to complete...");
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        double elapsed = (System.nanoTime() - startTime) / 1e9;
+        logger.info("Data loading finished in {} seconds ({} vectors/sec)",
+            elapsed, totalVectors / elapsed);
+        logger.info("Success: {} batches, Errors: {} batches", successCount.get(), errorCount.get());
+        
+        // Log final backpressure statistics
+        if (backpressure != null) {
+            logger.info("Final backpressure stats: {}", backpressure.getStats());
+        }
+
+        // verify the index is built
+        connection.waitForIndexBuild();
+        double endTime = (System.nanoTime() - startTime) / 1e9;
+        connection.writeIndexBuildTime(datasetName, endTime);
 
         // Wait for Cassandra to flush writes before validating
         logger.info("Waiting for Cassandra to flush writes...");
