@@ -43,17 +43,39 @@ public class FvecsStreamReader implements VectorStreamReader {
     private long position;
     private boolean hasNextCached;
     private boolean hasNextValue;
+    private final long startOrdinal;
+    private final long endOrdinal;
     
     /**
      * Create a streaming reader for an fvecs file.
      * @param filePath path to the .fvecs file
      */
     public FvecsStreamReader(String filePath) throws IOException {
+        this(filePath, 0, Long.MAX_VALUE);
+    }
+    
+    /**
+     * Create a streaming reader for an fvecs file with a specific range.
+     * @param filePath path to the .fvecs file
+     * @param startOrdinal starting ordinal (inclusive, 0-based)
+     * @param endOrdinal ending ordinal (inclusive, 0-based)
+     */
+    public FvecsStreamReader(String filePath, long startOrdinal, long endOrdinal) throws IOException {
         Path path = Paths.get(filePath);
         if (!Files.exists(path)) {
             throw new IOException("File not found: " + filePath);
         }
         
+        if (startOrdinal < 0) {
+            throw new IllegalArgumentException("Start ordinal cannot be negative: " + startOrdinal);
+        }
+        if (endOrdinal < startOrdinal) {
+            throw new IllegalArgumentException(
+                String.format("End ordinal (%d) must be >= start ordinal (%d)", endOrdinal, startOrdinal));
+        }
+        
+        this.startOrdinal = startOrdinal;
+        this.endOrdinal = endOrdinal;
         this.position = 0;
         this.hasNextCached = false;
         
@@ -68,8 +90,28 @@ public class FvecsStreamReader implements VectorStreamReader {
             long bytesPerVector = 4 + (dimension * 4L); // 4 bytes for dimension + dimension * 4 bytes for floats
             this.totalVectors = fileSize / bytesPerVector;
             
+            // Validate range
+            if (startOrdinal >= totalVectors) {
+                throw new IllegalArgumentException(
+                    String.format("Start ordinal (%d) is beyond dataset size (%d)", startOrdinal, totalVectors));
+            }
+            
             // Open stream for reading
             this.dis = new DataInputStream(new BufferedInputStream(new FileInputStream(filePath), 1024 * 1024));
+            
+            // Skip to start position if needed
+            if (startOrdinal > 0) {
+                long bytesToSkip = startOrdinal * bytesPerVector;
+                long skipped = 0;
+                while (skipped < bytesToSkip) {
+                    long n = dis.skip(bytesToSkip - skipped);
+                    if (n <= 0) {
+                        throw new IOException("Failed to skip to start position: " + startOrdinal);
+                    }
+                    skipped += n;
+                }
+                this.position = startOrdinal;
+            }
         } else {
             tempDis.close();
             throw new IOException("Empty file: " + filePath);
@@ -79,7 +121,8 @@ public class FvecsStreamReader implements VectorStreamReader {
     @Override
     public boolean hasNext() throws IOException {
         if (!hasNextCached) {
-            hasNextValue = dis.available() > 0;
+            // Check if we've reached the end ordinal or end of file
+            hasNextValue = position <= endOrdinal && dis.available() > 0;
             hasNextCached = true;
         }
         return hasNextValue;

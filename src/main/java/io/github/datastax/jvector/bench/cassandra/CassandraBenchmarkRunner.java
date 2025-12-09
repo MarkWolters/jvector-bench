@@ -31,6 +31,7 @@ import io.github.datastax.jvector.bench.cassandra.config.*;
 import io.github.datastax.jvector.bench.util.BenchmarkSummarizer;
 import io.github.datastax.jvector.bench.util.DataSet;
 import io.github.datastax.jvector.bench.util.DataSetLoader;
+import io.github.datastax.jvector.bench.util.DatasetRange;
 import io.github.datastax.jvector.bench.util.DownloadHelper;
 import io.github.datastax.jvector.bench.util.FvecsStreamReader;
 import io.github.datastax.jvector.bench.util.MultiFileDatasource;
@@ -93,6 +94,8 @@ public class CassandraBenchmarkRunner {
         System.out.println("Load Options:");
         System.out.println("  --connection <path>    Path to Cassandra connection config YAML (required)");
         System.out.println("  --dataset <name>       Dataset name to load (required)");
+        System.out.println("                         Supports range syntax: dataset-name(start..end)");
+        System.out.println("                         Example: cohere-english-v3-10M(0..999999)");
         System.out.println("  --index-config <path>  Path to vector index config YAML (required)");
         System.out.println("  --batch-size <n>       Batch size for inserts (default: 500)");
         System.out.println("  --concurrency <n>      Concurrent batch operations (default: 32)");
@@ -124,13 +127,25 @@ public class CassandraBenchmarkRunner {
         Map<String, String> params = parseArgs(args);
 
         String connectionPath = params.get("connection");
-        String datasetName = params.get("dataset");
+        String datasetSpec = params.get("dataset");
         String indexConfigPath = params.get("index-config");
 
-        if (connectionPath == null || datasetName == null || indexConfigPath == null) {
+        if (connectionPath == null || datasetSpec == null || indexConfigPath == null) {
             logger.error("Missing required arguments for load command");
             printUsage();
             System.exit(1);
+        }
+
+        // Parse dataset specification (may include range)
+        DatasetRange datasetRange = DatasetRange.parse(datasetSpec);
+        String datasetName = datasetRange.getDatasetName();
+        
+        logger.info("Dataset specification: {}", datasetRange);
+        if (datasetRange.hasRange()) {
+            logger.info("Loading range: {} to {} ({} vectors)",
+                datasetRange.getStartOrdinal(),
+                datasetRange.getEndOrdinal(),
+                datasetRange.getRangeSize());
         }
 
         // Parse configuration
@@ -155,6 +170,7 @@ public class CassandraBenchmarkRunner {
 
         // Download dataset files if needed (same as original logic)
         logger.info("Checking/downloading dataset files...");
+
         MultiFileDatasource mfd = DownloadHelper.maybeDownloadFvecs(datasetName);
         
         String baseVectorPath = "fvec/" + mfd.basePath;
@@ -183,8 +199,8 @@ public class CassandraBenchmarkRunner {
             // Setup schema
             connection.ensureSchema(indexConfig, loadConfig.isDropExisting());
 
-            // Load data using streaming
-            loadDataIntoIndexStreaming(connection, datasetName, baseVectorPath, totalVectors, loadConfig);
+            // Load data using streaming with range support
+            loadDataIntoIndexStreaming(connection, datasetName, baseVectorPath, datasetRange, loadConfig);
 
             logger.info("Dataset loading complete!");
         }
@@ -362,12 +378,23 @@ public class CassandraBenchmarkRunner {
     /**
      * Load dataset vectors into Cassandra using streaming to avoid loading entire dataset into memory.
      * This is the memory-efficient version for large datasets.
+     * Supports loading a specific range of vectors from the dataset.
      */
     private static void loadDataIntoIndexStreaming(CassandraConnection connection, String datasetName,
-                                                   String baseVectorPath, long totalVectors, LoadingConfig loadConfig)
+                                                   String baseVectorPath, DatasetRange datasetRange, LoadingConfig loadConfig)
         throws Exception {
 
-        logger.info("Streaming {} vectors into Cassandra from {}...", totalVectors, baseVectorPath);
+        // Determine the actual range to load
+        long startOrdinal = datasetRange.hasRange() ? datasetRange.getStartOrdinal() : 0;
+        long endOrdinal = datasetRange.hasRange() ? datasetRange.getEndOrdinal() : Long.MAX_VALUE;
+        long expectedVectors = datasetRange.hasRange() ? datasetRange.getRangeSize() : -1;
+        
+        if (datasetRange.hasRange()) {
+            logger.info("Streaming vectors {} to {} ({} vectors) into Cassandra from {}...",
+                startOrdinal, endOrdinal, expectedVectors, baseVectorPath);
+        } else {
+            logger.info("Streaming all vectors into Cassandra from {}...", baseVectorPath);
+        }
 
         PreparedStatement insert = connection.getSession().prepare(
             String.format("INSERT INTO %s.%s (id, vector) VALUES (?, ?)",
@@ -403,18 +430,20 @@ public class CassandraBenchmarkRunner {
         AtomicInteger errorCount = new AtomicInteger(0);
 
         long startTime = System.nanoTime();
-        int totalBatches = (int) ((totalVectors + batchSize - 1) / batchSize);
+        long totalVectors;
+        
+        // Stream vectors and process in batches with range support
+        try (FvecsStreamReader reader = new FvecsStreamReader(baseVectorPath, startOrdinal, endOrdinal)) {
+            totalVectors = datasetRange.hasRange() ? expectedVectors : reader.getTotalVectors();
+            int totalBatches = (int) ((totalVectors + batchSize - 1) / batchSize);
 
-        logger.info("Loading {} vectors in {} batches (batch size: {}, concurrency: {})",
-            totalVectors, totalBatches, batchSize, concurrency);
-
-        // Stream vectors and process in batches
-        try (FvecsStreamReader reader = new FvecsStreamReader(baseVectorPath)) {
-            int vectorId = 0;
+            logger.info("Loading {} vectors in {} batches (batch size: {}, concurrency: {})",
+                totalVectors, totalBatches, batchSize, concurrency);
+            long vectorOrdinal = startOrdinal;
             BatchStatementBuilder batch = BatchStatement.builder(
                 loadConfig.isLogged() ? BatchType.LOGGED : BatchType.UNLOGGED
             );
-            int batchStartIdx = 0;
+            long batchStartIdx = startOrdinal;
             int vectorsInBatch = 0;
 
             while (reader.hasNext()) {
@@ -423,16 +452,16 @@ public class CassandraBenchmarkRunner {
                     break;
                 }
 
-                // Add vector to current batch
+                // Add vector to current batch using the actual ordinal as the ID
                 List<Float> vectorList = vectorToList(vector);
-                batch.addStatement(insert.bind(String.valueOf(vectorId), CqlVector.newInstance(vectorList)));
+                batch.addStatement(insert.bind(String.valueOf(vectorOrdinal), CqlVector.newInstance(vectorList)));
                 vectorsInBatch++;
-                vectorId++;
+                vectorOrdinal++;
 
                 // When batch is full or we've reached the end, execute it
                 if (vectorsInBatch >= batchSize || !reader.hasNext()) {
-                    final int batchStart = batchStartIdx;
-                    final int batchEnd = vectorId;
+                    final long batchStart = batchStartIdx;
+                    final long batchEnd = vectorOrdinal;
                     final BackpressureController bp = backpressure;
                     final BatchStatement batchToExecute = batch.build();
                     
@@ -491,7 +520,7 @@ public class CassandraBenchmarkRunner {
                     batch = BatchStatement.builder(
                         loadConfig.isLogged() ? BatchType.LOGGED : BatchType.UNLOGGED
                     );
-                    batchStartIdx = vectorId;
+                    batchStartIdx = vectorOrdinal;
                     vectorsInBatch = 0;
                 }
             }
