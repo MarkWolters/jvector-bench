@@ -135,7 +135,7 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
             qpsSamples[run] = successful / elapsed;  // QPS based on successful queries only
             SINK += counter.sum();
 
-            logger.info("Test run {}: {:.1f} QPS ({} successful, {} failed)",
+            logger.info("Test run {}: {} QPS ({} successful, {} failed)",
                 run, qpsSamples[run], successful, failCount.get());
         }
 
@@ -148,7 +148,7 @@ public class CassandraThroughputBenchmark implements CassandraBenchmark {
         double avgSuccessCount = StatUtils.mean(java.util.Arrays.stream(successCounts).asDoubleStream().toArray());
         double successRate = (avgSuccessCount / totalQueries) * 100.0;
 
-        logger.info("Throughput benchmark complete: {:.1f} ± {:.1f} QPS (CV: {:.1f}%)",
+        logger.info("Throughput benchmark complete: {} ± {} QPS (CV: {}%)",
             avgQps, stdDev, cv);
         
         if (totalFailures.get() > 0) {
