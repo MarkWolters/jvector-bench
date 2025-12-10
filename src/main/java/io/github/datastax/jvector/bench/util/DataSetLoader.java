@@ -30,4 +30,40 @@ public class DataSetLoader {
         }
         return ds;
     }
+    
+    /**
+     * Load only query vectors and ground truth from a dataset, without loading base vectors.
+     * This is memory-efficient for benchmarking against external indexes (like Cassandra)
+     * where the base vectors are already loaded.
+     *
+     * @param fileName Dataset name
+     * @return DataSet with minimal base vectors (just one dummy vector)
+     * @throws IOException if files cannot be read
+     * @throws UnsupportedOperationException if the dataset format doesn't support query-only loading
+     */
+    public static DataSet loadQueriesOnly(String fileName) throws IOException {
+        return loadQueriesOnly(fileName, null);
+    }
+    
+    /**
+     * Load only query vectors and ground truth from a dataset, without loading base vectors.
+     * This is memory-efficient for benchmarking against external indexes (like Cassandra)
+     * where the base vectors are already loaded.
+     *
+     * @param fileName Dataset name
+     * @param groundTruthPath Optional path to ground truth file (overrides default if provided)
+     * @return DataSet with minimal base vectors (just one dummy vector)
+     * @throws IOException if files cannot be read
+     * @throws UnsupportedOperationException if the dataset format doesn't support query-only loading
+     */
+    public static DataSet loadQueriesOnly(String fileName, String groundTruthPath) throws IOException {
+        if (fileName.endsWith(".hdf5")) {
+            throw new UnsupportedOperationException(
+                "Query-only loading is not yet supported for HDF5 datasets. " +
+                "Use loadDataSet() instead or convert to fvecs format.");
+        } else {
+            var mfd = DownloadHelper.maybeDownloadFvecs(fileName);
+            return mfd.loadQueriesOnly(groundTruthPath);
+        }
+    }
 }

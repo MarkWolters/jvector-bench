@@ -105,9 +105,11 @@ public class CassandraBenchmarkRunner {
         System.out.println("Benchmark Options:");
         System.out.println("  --connection <path>    Path to Cassandra connection config YAML (required)");
         System.out.println("  --dataset <name>       Dataset name (must match loaded data) (required)");
+        System.out.println("  --index-config <path>  Path to vector index config YAML (required)");
         System.out.println("  --output <path>        Output path for results (required)");
         System.out.println("  --topK <n>             Number of results to return (default: 10)");
         System.out.println("  --query-runs <n>       Number of times to run queries (default: 2)");
+        System.out.println("  --gt <path>            Path to ground truth file (overrides default)");
         System.out.println();
         System.out.println("Compare Options:");
         System.out.println("  --jvector <path>       Path to jvector-bench results JSON (required)");
@@ -587,6 +589,7 @@ public class CassandraBenchmarkRunner {
         String datasetName = params.get("dataset");
         String outputPath = params.get("output");
         String indexConfigPath = params.get("index-config");
+        String groundTruthPath = params.get("gt");
 
         if (connectionPath == null || datasetName == null || outputPath == null || indexConfigPath == null) {
             logger.error("Missing required arguments for benchmark command");
@@ -605,9 +608,13 @@ public class CassandraBenchmarkRunner {
         logger.info("Running benchmarks against Cassandra");
         logger.info("Dataset: {}", datasetName);
         logger.info("TopK: {}, Query runs: {}", topK, queryRuns);
+        if (groundTruthPath != null) {
+            logger.info("Using custom ground truth file: {}", groundTruthPath);
+        }
 
-        // Load dataset (for queries)
-        DataSet ds = DataSetLoader.loadDataSet(datasetName);
+        // Load only query vectors and ground truth (not base vectors) to save memory
+        logger.info("Loading query vectors and ground truth (base vectors already in Cassandra)...");
+        DataSet ds = DataSetLoader.loadQueriesOnly(datasetName, groundTruthPath);
         logger.info("Loaded {} query vectors", ds.queryVectors.size());
 
         // Connect and run benchmarks

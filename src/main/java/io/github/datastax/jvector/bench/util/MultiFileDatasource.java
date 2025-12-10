@@ -17,10 +17,12 @@
 package io.github.datastax.jvector.bench.util;
 
 import io.github.jbellis.jvector.vector.VectorSimilarityFunction;
+import io.github.jbellis.jvector.vector.types.VectorFloat;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +55,42 @@ public class MultiFileDatasource {
         var queryVectors = SiftLoader.readFvecs("fvec/" + queriesPath);
         var gtVectors = SiftLoader.readIvecs("fvec/" + groundTruthPath);
         return DataSet.getScrubbedDataSet(name, VectorSimilarityFunction.COSINE, baseVectors, queryVectors, gtVectors);
+    }
+
+    /**
+     * Load only query vectors and ground truth, without loading base vectors.
+     * This is useful for benchmarking against an external index (like Cassandra)
+     * where the base vectors are already loaded.
+     *
+     * @return DataSet with minimal base vectors list (just one dummy vector)
+     * @throws IOException if files cannot be read
+     */
+    public DataSet loadQueriesOnly() throws IOException {
+        return loadQueriesOnly(null);
+    }
+    
+    /**
+     * Load only query vectors and ground truth, without loading base vectors.
+     * This is useful for benchmarking against an external index (like Cassandra)
+     * where the base vectors are already loaded.
+     *
+     * @param groundTruthPathOverride Optional path to ground truth file (overrides default if provided)
+     * @return DataSet with minimal base vectors list (just one dummy vector)
+     * @throws IOException if files cannot be read
+     */
+    public DataSet loadQueriesOnly(String groundTruthPathOverride) throws IOException {
+        var queryVectors = SiftLoader.readFvecs("fvec/" + queriesPath);
+        
+        // Use override path if provided, otherwise use default
+        String gtPath = groundTruthPathOverride != null ? groundTruthPathOverride : "fvec/" + groundTruthPath;
+        var gtVectors = SiftLoader.readIvecs(gtPath);
+        
+        // Create a minimal base vector list with just one dummy vector to satisfy DataSet validation
+        // The dimension is taken from the query vectors
+        List<VectorFloat<?>> minimalBaseVectors = new ArrayList<>();
+        minimalBaseVectors.add(queryVectors.get(0));
+        
+        return DataSet.getScrubbedDataSet(name, VectorSimilarityFunction.COSINE, minimalBaseVectors, queryVectors, gtVectors);
     }
 
     public static Map<String, MultiFileDatasource> byName = new HashMap<>() {{
