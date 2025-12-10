@@ -90,7 +90,12 @@ public class MultiFileDatasource {
         List<VectorFloat<?>> minimalBaseVectors = new ArrayList<>();
         minimalBaseVectors.add(queryVectors.get(0));
         
-        return DataSet.getScrubbedDataSet(name, VectorSimilarityFunction.COSINE, minimalBaseVectors, queryVectors, gtVectors);
+        // IMPORTANT: Do NOT use getScrubbedDataSet() here!
+        // When loading queries only, we don't have the actual base vectors, so scrubbing would
+        // create an incorrect index mapping that breaks ground truth references.
+        // The base vectors are already loaded in Cassandra with their original indices,
+        // so ground truth must reference those original indices.
+        return new DataSet(name, VectorSimilarityFunction.COSINE, minimalBaseVectors, queryVectors, gtVectors);
     }
 
     public static Map<String, MultiFileDatasource> byName = new HashMap<>() {{
