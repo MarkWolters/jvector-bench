@@ -93,7 +93,7 @@ public class CassandraAccuracyBenchmark implements CassandraBenchmark {
         int failed = failedQueries.get();
         if (failed > 0) {
             double failureRate = (failed * 100.0) / totalQueries;
-            logger.warn("Accuracy benchmark had {} failed queries out of {} ({:.2f}%)",
+            logger.warn("Accuracy benchmark had {} failed queries out of {} ({}%)",
                 failed, totalQueries, failureRate);
         }
 
@@ -107,15 +107,15 @@ public class CassandraAccuracyBenchmark implements CassandraBenchmark {
             ds.groundTruth, results, topK
         );
 
-        logger.info("Accuracy benchmark complete: Recall@{}={:.4f}, MAP@{}={:.4f}",
+        logger.info("Accuracy benchmark complete: Recall@{}={}, MAP@{}={}",
             topK, recall, topK, map);
 
         // Log warning if recall seems suspiciously low
         if (recall < 0.5 && failed == 0) {
-            logger.warn("WARNING: Recall@{} is unusually low ({:.4f}). " +
+            logger.warn("WARNING: Recall@{} is unusually low ({}). " +
                        "This may indicate a configuration mismatch or data loading issue.", topK, recall);
         } else if (recall < 0.5 && failed > 0) {
-            logger.warn("WARNING: Recall@{} is unusually low ({:.4f}). " +
+            logger.warn("WARNING: Recall@{} is unusually low ({}). " +
                        "This is likely due to {} failed queries.", topK, recall, failed);
         }
 

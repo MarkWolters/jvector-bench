@@ -106,7 +106,7 @@ public class CassandraLatencyBenchmark implements CassandraBenchmark {
         if (failedQueries > 0) {
             int totalAttempts = totalQueries * queryRuns;
             double failureRate = (failedQueries * 100.0) / totalAttempts;
-            logger.warn("Latency benchmark completed with {} failed queries out of {} ({:.2f}%)",
+            logger.warn("Latency benchmark completed with {} failed queries out of {} ({}%)",
                 failedQueries, totalAttempts, failureRate);
         }
 
@@ -124,7 +124,7 @@ public class CassandraLatencyBenchmark implements CassandraBenchmark {
             p999 = getPercentile(latencies, 0.999) / 1e6;
         }
 
-        logger.info("Latency benchmark complete: mean={:.3f}ms, p50={:.3f}ms, p99={:.3f}ms, p999={:.3f}ms",
+        logger.info("Latency benchmark complete: mean={}ms, p50={}ms, p99={}ms, p999={}ms",
             mean, p50, p99, p999);
 
         List<Metric> metrics = new ArrayList<>();
