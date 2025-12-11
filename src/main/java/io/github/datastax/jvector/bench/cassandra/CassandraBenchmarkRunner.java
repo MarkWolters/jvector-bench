@@ -108,6 +108,8 @@ public class CassandraBenchmarkRunner {
         System.out.println("  --index-config <path>  Path to vector index config YAML (required)");
         System.out.println("  --output <path>        Output path for results (required)");
         System.out.println("  --topK <n>             Number of results to return (default: 10)");
+        System.out.println("  --overquery <n>        Overquery multiplier for reranking (default: 1.0)");
+        System.out.println("                         rerankK = topK * overquery");
         System.out.println("  --query-runs <n>       Number of times to run queries (default: 2)");
         System.out.println("  --gt <path>            Path to ground truth file (overrides default)");
         System.out.println();
@@ -600,6 +602,7 @@ public class CassandraBenchmarkRunner {
         VectorIndexConfig indexConfig = VectorIndexConfig.fromYaml(indexConfigPath);
 
         int topK = Integer.parseInt(params.getOrDefault("topK", "10"));
+        double overquery = Double.parseDouble(params.getOrDefault("overquery", "1.0"));
         int queryRuns = Integer.parseInt(params.getOrDefault("query-runs", "2"));
 
         // Parse configuration
@@ -607,7 +610,7 @@ public class CassandraBenchmarkRunner {
 
         logger.info("Running benchmarks against Cassandra");
         logger.info("Dataset: {}", datasetName);
-        logger.info("TopK: {}, Query runs: {}", topK, queryRuns);
+        logger.info("TopK: {}, Overquery: {}, Query runs: {}", topK, overquery, queryRuns);
         if (groundTruthPath != null) {
             logger.info("Using custom ground truth file: {}", groundTruthPath);
         }
@@ -633,6 +636,16 @@ public class CassandraBenchmarkRunner {
                 searchConfig.setSimilarityFunction(indexConfig.getSimilarityFunction());
             }
             searchConfig.setReadConsistency(cassConfig.getReadConsistencyLevel());
+            
+            // Apply overquery if specified (overquery > 1.0 means reranking)
+            if (overquery > 1.0) {
+                int rerankK = (int) (topK * overquery);
+                searchConfig.setRerankK(rerankK);
+                logger.info("Overquery enabled: rerankK = {} (topK {} * overquery {})",
+                    rerankK, topK, overquery);
+            } else if (overquery < 1.0) {
+                logger.warn("Overquery value {} is less than 1.0, ignoring (must be >= 1.0)", overquery);
+            }
 
             // Create benchmark instances
             List<CassandraBenchmark> benchmarks = new ArrayList<>();
@@ -661,6 +674,10 @@ public class CassandraBenchmarkRunner {
                     Map<String, Object> metricParams = new HashMap<>();
                     metricParams.put("dataset", ds.name);
                     metricParams.put("topK", topK);
+                    metricParams.put("overquery", overquery);
+                    if (overquery > 1.0) {
+                        metricParams.put("rerankK", (int) (topK * overquery));
+                    }
                     metricParams.put("queryRuns", queryRuns);
                     metricParams.put("benchmark", benchmark.getBenchmarkName());
 
