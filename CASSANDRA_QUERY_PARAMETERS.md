@@ -147,8 +147,13 @@ To test different configurations:
      --connection connection-local.yml \
      --dataset siftsmall \
      --index-config vector-index-siftsmall.yml \
-     --output results/test
+     --output results/test \
+     --topK 10 \
+     --overquery 1.5
    ```
+   
+   The `--overquery` parameter enables reranking: `rerankK = topK * overquery`.
+   For example, `--overquery 1.5` with `--topK 10` will retrieve 15 candidates and rerank to top 10.
 3. Compare results with different parameter values
 
 ## Code Changes Summary

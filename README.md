@@ -86,6 +86,22 @@ java -jar target/jvector-bench-1.0.0-SNAPSHOT-jar-with-dependencies.jar cassandr
   --index-config src/main/resources/cassandra-configs/vector-index-ada002.yml
 ```
 
+**Incremental Loading:**
+Load datasets in chunks using range syntax `dataset-name(start..end)`:
+```bash
+# Load first 1M records (ordinals 0-999999)
+java -jar target/jvector-bench-1.0.0-SNAPSHOT-jar-with-dependencies.jar cassandra load \
+  --connection src/main/resources/cassandra-configs/connection-local.yml \
+  --dataset cohere-english-v3-10M(0..999999) \
+  --index-config src/main/resources/cassandra-configs/vector-index-cohere-v3.yml
+
+# Load second 1M records (ordinals 1000000-1999999)
+java -jar target/jvector-bench-1.0.0-SNAPSHOT-jar-with-dependencies.jar cassandra load \
+  --connection src/main/resources/cassandra-configs/connection-local.yml \
+  --dataset cohere-english-v3-10M(1000000..1999999) \
+  --index-config src/main/resources/cassandra-configs/vector-index-cohere-v3.yml
+```
+
 3. **Run benchmarks:**
 ```bash
 java -jar target/jvector-bench-1.0.0-SNAPSHOT-jar-with-dependencies.jar cassandra benchmark \
@@ -142,6 +158,23 @@ java -jar jvector-bench-*-jar-with-dependencies.jar cassandra load \
   --index-config <index.yml> \
   [--batch-size <n>] \
   [--concurrency <n>] \
+```
+
+**Dataset Range Syntax:**
+The `--dataset` argument supports loading a specific range of vectors:
+- Full dataset: `--dataset dataset-name`
+- Range syntax: `--dataset dataset-name(start..end)` (inclusive, 0-based ordinals)
+
+Examples:
+```bash
+# Load entire dataset
+--dataset cohere-english-v3-10M
+
+# Load first 1M vectors (ordinals 0-999999)
+--dataset cohere-english-v3-10M(0..999999)
+
+# Load second 1M vectors (ordinals 1000000-1999999)
+--dataset cohere-english-v3-10M(1000000..1999999)
   [--drop-existing]
 ```
 
@@ -152,8 +185,12 @@ java -jar jvector-bench-*-jar-with-dependencies.jar cassandra benchmark \
   --dataset <dataset-name> \
   --output <path> \
   [--topK <n>] \
+  [--overquery <n>] \
   [--query-runs <n>]
 ```
+
+The `--overquery` parameter controls reranking: `rerankK = topK * overquery`. Default is 1.0 (no reranking).
+For example, `--topK 10 --overquery 2.0` will retrieve 20 candidates and rerank to return top 10.
 
 **Compare Results:**
 ```bash

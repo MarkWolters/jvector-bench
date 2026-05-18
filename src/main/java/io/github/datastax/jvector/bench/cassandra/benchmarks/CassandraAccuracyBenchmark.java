@@ -97,7 +97,7 @@ public class CassandraAccuracyBenchmark implements CassandraBenchmark {
                 failed, totalQueries, failureRate);
         }
 
-        // Calculate recall (AccuracyMetrics will handle empty results gracefully)
+        // Calculate recall (failed queries contribute 0 matches, penalising recall proportionally)
         double recall = AccuracyMetrics.recallFromSearchResults(
             ds.groundTruth, results, topK, topK
         );

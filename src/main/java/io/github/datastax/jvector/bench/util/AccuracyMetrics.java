@@ -54,14 +54,12 @@ public class AccuracyMetrics {
         if (kGT > gt.size()) {
             throw new IllegalArgumentException("kGT: " + kGT + " > Gt size: " + gt.size());
         }
-        if (kRetrieved > retrieved.size()) {
-            throw new IllegalArgumentException("kRetrieved: " + kRetrieved + " > retrieved size: " + retrieved.size());
-        }
 
         var gtView = crop(gt, kGT);
+        // Use however many results were actually returned; fewer than kRetrieved counts as misses.
         var retrievedView = crop(retrieved, kRetrieved);
 
-        if (gtView.size() > retrieved.size()) {
+        if (gtView.size() > retrievedView.size()) {
             return gtView.stream().filter(retrievedView::contains).count();
         } else {
             return retrievedView.stream().filter(gtView::contains).count();
@@ -96,11 +94,9 @@ public class AccuracyMetrics {
         if (k > gt.size()) {
             throw new IllegalArgumentException("k: " + k + " > Gt size: " + gt.size());
         }
-        if (k > retrievedTemp.size()) {
-            throw new IllegalArgumentException("k: " + k + " > retrieved size: " + retrievedTemp.size());
-        }
 
         var gtView = crop(gt, k);
+        // Use however many results were actually returned; fewer than k counts as misses.
         var retrievedView = crop(retrievedTemp, k);
 
         double score = 0.;

@@ -305,8 +305,12 @@ java -jar target/jvector-bench-1.0.0-SNAPSHOT-jar-with-dependencies.jar cassandr
   --dataset siftsmall \
   --output results/cassandra-siftsmall \
   --topK 10 \
+  --overquery 1.0 \
   --query-runs 2
 ```
+
+Note: The `--overquery` parameter controls reranking where `rerankK = topK * overquery`.
+Use values > 1.0 to enable reranking (e.g., `--overquery 2.0` retrieves 2x candidates for reranking).
 
 **Expected output:**
 ```
